@@ -1,0 +1,4 @@
+-p src
+-m Calamari
+--cpp ./build/
+--cmd cp ./build/Calamari ./calamari
