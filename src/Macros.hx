@@ -29,4 +29,12 @@ class Macros {
         #end
         return macro $v{hash};
     }
+
+    public static macro function fileContent(path:String) {
+        var content = '';
+        #if !display
+        if (FileSystem.exists(path)) content = File.getContent(path);
+        #end
+        return macro $v{content};
+    }
 }

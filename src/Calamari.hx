@@ -1,5 +1,7 @@
 package;
 
+import sys.io.FileOutput;
+import haxe.io.Path;
 import sys.io.File;
 import sys.io.Process;
 using StringTools;
@@ -9,6 +11,18 @@ enum abstract ExitCode(Int) {
     var InvalidArguments = 1;
     var DuplicateFlag = 2;
     var UnknownCommand = 3;
+}
+
+enum abstract TargetLocations(String) {
+    var BUILD_DIR = './build';
+    var CPP = '$BUILD_DIR/cpp/';
+    var CSHARP = '$BUILD_DIR/csharp/';
+    var HASHLINK = '$BUILD_DIR/hashlink/';
+    var JAVA = '$BUILD_DIR/java/';
+    var JVM = '$BUILD_DIR/jvm/';
+    var NODEJS = '$BUILD_DIR/nodejs/';
+    var NEKO = '$BUILD_DIR/neko/';
+    var PYTHON = '$BUILD_DIR/python/';
 }
 
 class Calamari {
@@ -30,22 +44,77 @@ class Calamari {
         return exit;
     }
 
+    static final rootCommandList = ['build', 'datagen', 'run', 'test', 'buildall', 'help'];
+    static final helpTopicList = ['commands', 'targets'];
+    static final knownFlags = ['debug', 'quiet', 'verbose'];
+    static final allKnownAliases = [
+        // C++
+        'cpp',
+        'c++',
+        'cplusplus',
+        'hxcpp',
+        // C#
+        'cs',
+        'c#',
+        'csharp',
+        'hxcs',
+        // Hashlink
+        'hl',
+        'hashlink',
+        // Java
+        'java',
+        'hxjava',
+        // JVM
+        'jvm',
+        // NodeJS
+        'js',
+        'node',
+        'nodejs',
+        'hxnodejs',
+        // Neko
+        'neko',
+        // excluding the 'n' alias as on zsh with autosuggestions, typing `calamari test n` ends the suggestion, even though pressing enter still works
+        // Python
+        'python',
+    ];
+
     static function getCompletions(input:String):Array<String> {
-        return ['this', 'is', 'very', 'cool'];
+        var args = input.split(' ');
+        args.shift();
+
+        if (args[args.length-1].startsWith('-')) {
+            return [for (flag in knownFlags) '-$flag'];
+        }
+
+        if (args.length == 1) return rootCommandList;
+        if (args.length == 2) {
+            var arg1 = args[0];
+            switch arg1 {
+                case 'help': return helpTopicList.concat(rootCommandList);
+                case 'buildall': return [];
+                case 'test': return allKnownAliases;
+                case 'run': return allKnownAliases;
+            }
+        }
+        return [];
+    }
+
+    static function getScriptPath():String {
+        return new Path(Sys.programPath()).dir;
     }
 
     static function main() {
         parseCommand();
 
-        //trace('flags: $flags');
-        //trace('options: $options');
-        //trace('args: $args');
-
         if (options.exists('autocomplete')) {
-            var file = File.write('/home/frying-pan/Desktop/dev/Calamari/completion_test.txt');
-            file.writeString(options.get('autocomplete'));
-            file.close();
-            log(getCompletions(options.get('autocomplete')).join('\n'));
+            var completions = getCompletions(options.get('autocomplete'));
+            var output = completions.join('\n'); 
+            log(output);
+            Sys.exit(cast OK);
+        }
+
+        if (flags.contains('setup')) {
+            log(Macros.fileContent('./scripts/completion.zsh'));
             Sys.exit(cast OK);
         }
 
@@ -146,6 +215,10 @@ List of help pages:
         }
     }
 
+    static function parseArgs(all:Array<String>):{flags:Array<String>, args:Array<String>, options:Map<String, String>} {
+        return {flags: [], args: [], options: []};
+    }
+
     static function parseCommand() {
         var all = Sys.args();
 
@@ -161,7 +234,8 @@ List of help pages:
                 }
                 var key = arg.substr(2, arg.indexOf('=')-2);
                 var value = arg.substr(arg.indexOf('=')+1);
-                options.set(key, value);
+                if (options.exists(key)) options.set(key, options.get(key) + ' $value');
+                else options.set(key, value);
             } else if (arg.startsWith('-')) {
                 pastArgs = true;
                 if (flags.contains(arg.substr(1))) {
