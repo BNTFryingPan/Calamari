@@ -8,12 +8,8 @@ _calamari_complete_zsh() {
 }
 
 _calamari_complete_bash() {
-    #COMPREPLY=()
     local word="${COMP_WORDS[COMP_CWORD]}"
-    #local completions=""
     COMPREPLY=( $(compgen -W "$(calamari --autocomplete="$COMP_LINE")" -- $word) )
-    #echo $COMPREPLY
-    #echo $COMP_LINE
 }
 
 if [ -n "$ZSH_VERSION" ]; then

@@ -2,3 +2,4 @@
 -m Calamari
 --cpp ./build/
 --cmd cp ./build/Calamari ./calamari
+--cmd ./calamari install

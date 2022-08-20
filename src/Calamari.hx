@@ -1,11 +1,14 @@
 package;
 
+import sys.io.FileOutput;
 import haxe.Json;
 import sys.FileSystem;
 import sys.io.File;
 import haxe.Http;
 import haxe.io.Path;
 import sys.io.Process;
+import ProjectFile;
+import MinecraftManifests;
 using StringTools;
 
 enum abstract ExitCode(Int) {
@@ -13,18 +16,19 @@ enum abstract ExitCode(Int) {
     var InvalidArguments = 1;
     var DuplicateFlag = 2;
     var UnknownCommand = 3;
+    var WorkingDirNotACalamariProject = 4;
+    var VersionExistsButNoServerJar = 5;
 }
 
 enum abstract TargetLocations(String) {
-    var BUILD_DIR = './build';
-    var CPP = '$BUILD_DIR/cpp/';
-    var CSHARP = '$BUILD_DIR/csharp/';
-    var HASHLINK = '$BUILD_DIR/hashlink/';
-    var JAVA = '$BUILD_DIR/java/';
-    var JVM = '$BUILD_DIR/jvm/';
-    var NODEJS = '$BUILD_DIR/nodejs/';
-    var NEKO = '$BUILD_DIR/neko/';
-    var PYTHON = '$BUILD_DIR/python/';
+    var CPP = 'cpp/';
+    var CSHARP = 'csharp/';
+    var HASHLINK = 'hashlink/';
+    var JAVA = 'java/';
+    var JVM = 'jvm/';
+    var NODEJS = 'nodejs/';
+    var NEKO = 'neko/';
+    var PYTHON = 'python/';
 }
 
 enum SysTarget {
@@ -45,128 +49,55 @@ enum HostOS {
     Unknown;
 }
 
-typedef MinecraftVersion = {
-    id:String,
-    type:String,
-    url:String,
-    time:String,
-    releaseTime:String,
+enum HostArch {
+    ArmV6;
+    ArmV7;
+    X86;
+    X64;
 }
-
-typedef ManifestLatest = {
-    release:String,
-    snapshot:String,
-}
-
-typedef VersionManifest = {
-    latest:ManifestLatest,
-    versions:Array<MinecraftVersion>,
-}
-
-typedef AssetIndex = {
-    id:String,
-    sha1:String,
-    size:Int,
-    totalSize:Int,
-    url:String,
-}
-
-typedef JavaVersionRequirement = {
-    component:String,
-    majorVersion:Int,
-}
-
-typedef ManifestOSRule = {
-    arch:Null<String>,
-    name:Null<String>,
-    version:Null<String>,
-}
-
-typedef ManifestFeatureRule = {
-    is_demo_user:Null<Bool>,
-}
-
-typedef ManifestRule = {
-    action:String,
-    os:Null<ManifestOSRule>,
-    features:Null<ManifestFeatureRule>,
-}
-
-typedef LibraryArtifact = {
-    path:String,
-    sha1:String,
-    size:Int,
-    url:String,
-}
-
-typedef LibraryRequirement = {
-    downloads:{artifact:LibraryArtifact},
-    name:String,
-    rules:Null<Array<ManifestRule>>,
-}
-
-typedef VersionDownload = {
-    sha1:String,
-    size:Int,
-    url:String,
-}
-
-typedef VersionData = {
-    assetIndex:AssetIndex,
-    assets:String,
-    complianceLevel:Int,
-    downloads:{
-        client:VersionDownload,
-        client_mappings:VersionDownload,
-        server:VersionDownload,
-        server_mappings:VersionDownload,
-    },
-    id:String,
-    javaVersion:JavaVersionRequirement,
-    libraries:Array<LibraryRequirement>,
-    logging:{
-        client:{
-            argument:String,
-            file:{
-                id:String,
-                sha1:String,
-                size:Int,
-                url:String
-            },
-            type:String
-        }
-    },
-    mainClass:String,
-    minimumLauncherVersion:Int,
-    releaseTime:String,
-    time:String,
-    type:String,
-}
-
 class Calamari {
-    static function log(text:String) {
-        if (options.exists('autocomplete')) return;
-        Sys.println(text);
+    public static function log(text:String) {
+        if (!options.exists('autocomplete')) Sys.println(text);
+        if (logFileOutput != null) {
+            logFileOutput.writeString('$text\n');
+            logFileOutput.flush();
+        }
     }
 
-    static var flags:Array<String> = [];
-    static var options:Map<String, String> = [];
-    static var args:Array<String> = [];
+    public static function error(text:String) {
+        log('\x1b[31;1m    Error:\x1b[0m\x1b[1m $text\x1b[0m');
+    }
 
-    static function runHaxe(args:Array<String>):Int {
+    public static var flags:Array<String> = [];
+    public static var options:Map<String, String> = [];
+    public static var args:Array<String> = [];
+
+    public static function runHaxe(args:Array<String>) {
         var proc = new Process('haxe', args);
         var exit = proc.exitCode();
         if (exit != 0) {
             var out = proc.stderr.readAll().toString();
             log('Error running Haxe: $out');
-        }
-        return exit;
+        };
     }
 
-    static final rootCommandList = ['build', 'datagen', 'run', 'test', 'buildall', 'help'];
-    static final helpTopicList = ['commands', 'targets'];
-    static final knownFlags = ['debug', 'quiet', 'verbose'];
-    static final targetAliases = [
+    public static function exit(code:ExitCode) {
+        logFileOutput.close();
+        if (!FileSystem.exists(getFullPath('~/.calamari/logs/'))) FileSystem.createDirectory(getFullPath('~/.calamari/logs'));
+        if (!(options.exists('autocomplete') || options.exists('version') || flags.contains('setup')))
+            Sys.command('cp ${getFullPath('~/.calamari/latest.log')} ${getFullPath('~/.calamari/logs/${DateTools.format(Date.now(), "%Y-%m-%d_%H.%M.%S")}.log')}');
+        Sys.exit(cast code);
+    }
+
+    public static final rootCommandList = ['build', 'datagen', 'run', 'test', 'buildall', 'help', 'install'];
+    public static final helpTopicList = ['commands', 'targets'];
+    public static final knownFlags = ['debug', 'quiet', 'verbose'];
+    public static final knownOptions = [
+        'version' => ['', 'hash', 'long', 'short'],
+        'project' => ['@'],
+        'out' => ['@'],
+    ];
+    public static final targetAliases = [
         // C++
         'cpp' => Cpp,
         'c++' => Cpp,
@@ -198,15 +129,20 @@ class Calamari {
         'py' => Python,
     ];
 
-    static function getFullPath(path:String):String {
+    public static function getFullPath(path:String):String {
         var pat = ~/~/;
         return FileSystem.absolutePath(pat.replace(path, Sys.getEnv('HOME')));
     }
 
-    static final CACHE_EXPIRE_TIME = 215e5; // 6 hours
+    public static final CACHE_EXPIRE_TIME = 215e5; // 6 hours
 
-    static function downloadMinecraftVersion(version:String) {
+    public static function downloadMinecraftVersion(version:String) {
         var verData = getPistionDataForVersion(version);
+
+        if (verData.downloads.server == null) {
+            error('Found data for Minecraft ${version}, but it does not include a server jar url. Unable to continue');
+            exit(VersionExistsButNoServerJar);
+        }
 
         var path = getFullPath('~/.calamari/versions/${verData.type}_${verData.id}.jar');
         if (!FileSystem.exists(getFullPath('~/.calamari/versions/'))) FileSystem.createDirectory(getFullPath('~/.calamari/versions'));
@@ -230,7 +166,7 @@ class Calamari {
         log('    Finished!');
     }
 
-    static function getPistionDataForVersion(version:String):VersionData {
+    public static function getPistionDataForVersion(version:String):VersionData {
         var manifest = getMinecraftVersionManifest();
         var targetVersion:MinecraftVersion = null;
 
@@ -240,7 +176,7 @@ class Calamari {
                 break;
             }
         }
-        if (targetVersion == null) throw 'Could not fine Minecraft version matching "$version" in manifest.';
+        if (targetVersion == null) throw 'Could not find Minecraft version matching "$version" in manifest.';
 
         var path = getFullPath('~/.calamari/version_data/${targetVersion.type}_${targetVersion.id}.json');
         if ((!flags.contains('nocache')) && FileSystem.exists(path)) { // dont check expiry on this because its unlikely to change, but allow nocache to redownload anyways if something does change
@@ -255,7 +191,7 @@ class Calamari {
         return Json.parse(data);
     }
 
-    static function getMinecraftVersionManifest():VersionManifest {
+    public static function getMinecraftVersionManifest():VersionManifest {
         if (FileSystem.exists(getFullPath('~/.calamari/minecraft_version_manifest.json'))) {
             var stat = FileSystem.stat(getFullPath('~/.calamari/minecraft_version_manifest.json'));
             if (Date.now().getTime() - stat.mtime.getTime() < CACHE_EXPIRE_TIME && !flags.contains('nocache')) {
@@ -270,27 +206,32 @@ class Calamari {
         return Json.parse(data);
     }
 
-    static function getMinecraftVersionList():Array<String> {
+    public static function getCachedVersionListData():Array<{id:String, hasServerDownload:Bool}> {
+        if (FileSystem.exists(getFullPath('~/.calamari/cached_version_data.json'))) return Json.parse(File.getContent(getFullPath('~/.calamari/cached_version_data.json')));
         var data = getMinecraftVersionManifest();
-        
         var versions = [];
 
         for (ver in data.versions) {
-            versions.push(ver.id);
+            var verData = getPistionDataForVersion(ver.id);
+            versions.push({id: verData.id, hasServerDownload: verData.downloads.server != null});
         }
 
-        versions.reverse();
+        File.saveContent(getFullPath('~/.calamari/cached_version_data.json'), Json.stringify(versions));
 
         return versions;
-
-
-        //trace(File.read('~/.calamari/minecraft_version_manifest.json').readAll().toString());
     }
 
-    static var host(get, never):HostOS;
-    static var _host:Null<HostOS>;
+    public static function getMinecraftVersionList(requireServerJar=false):Array<String> {
+        var data = getCachedVersionListData();
+        var versions = [for (ver in data) if (ver.hasServerDownload) ver.id];
+        log(versions.toString());
+        return versions;
+    }
 
-    static function get_host():HostOS {
+    public static var host(get, never):HostOS;
+    public static var _host:Null<HostOS>;
+
+    public static function get_host():HostOS {
         if (_host != null) return _host;
         return _host = switch (Sys.systemName()) {
             case 'Windows':
@@ -304,7 +245,35 @@ class Calamari {
         }
     }
 
-    static function getExecutableName(target:SysTarget, windows:Bool=false, debug:Bool=false) {
+    public static var arch(get, never):HostArch;
+    public static var _arch:Null<HostArch>;
+
+    public static function get_arch():HostArch {
+        if (_arch != null) return _arch;
+        switch (host) {
+            case Windows:
+                if (Sys.getEnv('PROCESSOR_ARCHITECTURE').indexOf('64') > -1) return _arch = X64;
+
+                var proc_arch_wow64 = Sys.getEnv('PROCESSOR_ARCHITEW6432');
+                if (proc_arch_wow64 != null && proc_arch_wow64.indexOf('64') > -1) return _arch = X64;
+                return _arch = X86;
+            case Linux | Mac:
+                var proc = new Process('uname', ['-m']);
+                if (proc.exitCode() != 0) {
+                    error('Unable to get host architecture: ${proc.stderr.readAll().toString()}');
+                    return _arch = X86;
+                }
+
+                var out = proc.stdout.readAll().toString();
+                if (out.indexOf('armv6') > -1) return _arch = ArmV6;
+                if (out.indexOf('armv7') > -1) return _arch = ArmV7;
+                if (out.indexOf('64') > -1) return _arch = X64;
+            default:
+        }
+        return _arch = ArmV6;
+    }
+
+    public static function getExecutableName(target:SysTarget, windows:Bool=false, debug:Bool=false) {
         var name = 'Cuttlefish';
   
         if (debug) name += '.dev';
@@ -314,7 +283,7 @@ class Calamari {
         var proc = new Process('git', ['rev-parse', 'HEAD']);
         if (proc.exitCode() != 0) {
             var msg = proc.stderr.readAll().toString();
-            log('error getting commit hash: $msg');
+            error('Unable to get commit hash: $msg');
         } else name += '-${proc.stdout.readLine().substr(0, 6)}';
   
         name += switch target {
@@ -328,21 +297,69 @@ class Calamari {
            case Python: '.py';
            default: throw 'unknown target';
         }
-  
-        if ((target == Cpp || target == Csharp) && windows) name += '.exe';
-        return name;
-     }
 
-    static function getCompletions(input:String):Array<String> {
+        if (target == Cpp || target == Csharp) {
+            name += switch (arch) {
+                case ArmV6: '.armv6';
+                case ArmV7: '.armv7';
+                case X86: '.x86';
+                case X64: '.x64';
+            }
+
+            if (windows) name += '.exe';
+        }
+
+        return name;
+    }
+
+    public static function getVersionCompletions(input:String):Array<String> {
+        log('generating version completions for $input');
+        var split = ~/[-._ ]/g;
+        var snapshotRegex = ~/([1-9][0-9])w([0-5][0-9])([a-z])/;
+
+        var inputParts = split.split(input);
+        var versions = getMinecraftVersionList(true);
+        
+        var validVersionPartsForThisPart = [];
+
+        for (ver in versions) {
+            var lower = ver.toLowerCase();
+            var parts = split.split(lower);
+            if (parts.length < inputParts.length) continue;
+
+            if (lower.substring(0, input.length) != input) continue;
+            if (snapshotRegex.match(lower)) continue;
+
+            var whatToPutInList = split.split(ver.substring(input.length))[0];
+
+            if (validVersionPartsForThisPart.contains(whatToPutInList)) continue;
+            validVersionPartsForThisPart.push(whatToPutInList);
+        }
+        
+        return validVersionPartsForThisPart.map(v -> '$input$v');
+    }
+
+    public static function getCompletions(input:String):Array<String> {
+        log(input);
         flags.remove('nocache');
         var args = input.split(' ');
         args.shift();
-
+        log('${args.length} $args');
         var targetCompletionAliases = [for (key in targetAliases.keys()) key];
         targetCompletionAliases.remove('n');
         targetCompletionAliases.remove('py');
+        targetCompletionAliases.remove('c#');
 
         if (args[args.length-1].startsWith('-')) {
+            if (args[args.length-1].startsWith('--')) {
+                return [
+                    for (opt => values in knownOptions)
+                        for (value in values)
+                            if (value == '') '--$opt'
+                            else if (value == '@') '--$opt='
+                            else '--$opt=$value'
+                ];
+            }
             return [for (flag in knownFlags) '-$flag'];
         }
 
@@ -355,10 +372,13 @@ class Calamari {
                 case 'test': return targetCompletionAliases;
                 case 'run': return targetCompletionAliases;
                 case 'datagen':
-                    var input = args[1];
-
-                    return getMinecraftVersionList();
+                    return getVersionCompletions(args[1].toLowerCase());
+                    
             }
+        }
+        log('"${args[0]}" ${args[0] == "test"}');
+        if (args.length == 3 && args[0] == 'test') {
+            return getVersionCompletions(args[2].toLowerCase());
         }
         if (args.length >= 2) {
             if (args[0] == 'build') {
@@ -381,34 +401,99 @@ class Calamari {
         return [];
     }
 
-    static function getScriptPath():String {
+    public static function getScriptPath():String {
         return new Path(Sys.programPath()).dir;
     }
 
-    static function main() {
+    public static var logFileOutput:FileOutput;
+
+    public static function build(targets:Array<SysTarget>) {
+        for (target in targets) {
+            var args = ['-p=src', '-m=Main', '-L=uuid'];
+            if (flags.contains('debug')) args.push('--debug');
+            var copyTo = './out/${getExecutableName(target, host==Windows, flags.contains('debug'))}';
+            switch target {
+                case Cpp:
+                    log('Building C++');
+                    args.push('--cpp=$CPP');
+                    args.push('--cmd=cp ${CPP}Main${(host == Windows ? '.exe' : '')} $copyTo');
+                case Csharp:
+                    log('Building C#');
+                    args.push('--cs=$CSHARP');
+                    args.push('--cmd=cp ${CPP}Main${(host == Windows ? '.exe' : '')} $copyTo');
+                case Hashlink:
+                    log('Building Hashlink');
+                    args.push('--hl=${HASHLINK}Cuttlefish.hl');
+                    args.push('--cmd=cp ${HASHLINK}Cuttlefish.hl $copyTo');
+                case Java:
+                    log('Building Java');
+                    args.push('--java=$JAVA');
+                    args.push('--cmd=cp ${JAVA}Main${flags.contains('debug') ? '-Debug' : ''}.jar $copyTo');
+                case Jvm:
+                    log('Building Java Bytecode');
+                    args.push('--jvm=${JVM}Cuttlefish.jar');
+                    args.push('--cmd=cp ${JVM}Cuttlefish.jar $copyTo');
+                case Nodejs:
+                    error('NodeJS is currently not supported due to `hxnodejs` not supporting threads.');
+                    continue;
+                case Neko:
+                    log('Building Neko');
+                    args.push('--neko=${NEKO}Cuttlefish.n');
+                    args.push('--cmd=cp ${NEKO}Cuttlefish.n $copyTo');
+                case Python:
+                    log('Building Python');
+                    args.push('--python=${PYTHON}Cuttlefish.py');
+                    args.push('--cmd=cp ${PYTHON}Cuttlefish.py $copyTo');
+            }
+            runHaxe(args);
+        }
+    }
+
+    public static function main() {
+        if (!FileSystem.exists(getFullPath('~/.calamari/'))) FileSystem.createDirectory(getFullPath('~/.calamari'));
+        logFileOutput = File.write(getFullPath('~/.calamari/latest.log'));
         parseCommand();
 
         if (options.exists('autocomplete')) {
             var completions = getCompletions(options.get('autocomplete'));
             var output = completions.join('\n'); 
-            log(output);
-            Sys.exit(cast OK);
+            for (choice in completions) {
+                Sys.println(choice);
+            }
+            //log(output);
+            exit(OK);
+        }
+
+        if (options.exists('version')) {
+            var verType = options.get('version').toLowerCase();
+            switch verType {
+                case 'hash': Sys.println(flags.contains('full') ? Macros.commitHash() : Macros.commitHash().substr(0, 6));
+                case 'short': Sys.println(Macros.versionString());
+                case 'long': Sys.println('Calamari v${Macros.versionString()}-${Macros.commitHash().substr(0, 6)}');
+                default: Sys.println('Calamari ${Macros.versionString()}');
+            }
+            exit(OK);
         }
 
         if (flags.contains('setup')) {
-            log(Macros.fileContent('./scripts/completion.zsh'));
-            Sys.exit(cast OK);
+            if (!FileSystem.exists(getFullPath('~/.calamari/'))) FileSystem.createDirectory(getFullPath('~/.calamari'));
+            var out = File.write(getFullPath('~/.calamari/completion.sh'));
+            out.writeString(Macros.fileContent('./scripts/completion.zsh'));
+            out.close();
+            Sys.println(getFullPath('~/.calamari/completion.sh'));
+            exit(OK);
         }
 
         if (args.length == 0) {
             log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)}');
             log('    No command provided - use `calamari help` for usage');
-            Sys.exit(cast OK);
+            exit(OK);
         }
 
         log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)}');
         switch (args[0]) {
             case 'install':
+                log('    Attempting to install Calamari command...');
                 switch (host) {
                     case Windows:
                         log('    To install calamari, put the exe in a folder on your PATH.');
@@ -417,14 +502,16 @@ class Calamari {
                         var exit = proc.exitCode();
                         if (exit != 0) {
                             var out = proc.stderr.readAll().toString();
-                            log('Error copying file: $out');
-                        }
+                            log('    Error copying file: $out');
+                            log('Failed to install Calamari');
+                        } else log('Succesfully installed Calamari command. Add `source $(calamari -setup)` to your `~/.bashrc` or `~/.zshrc` to get completions');
                     case Mac:
                         log('    To install calamari, put the exectuable somewhere that your shell can find it.');
                     case Unknown:
                         log('    Unknown platform! Can\'t provide install instructions.');
                 }
             case 'build':
+                var project = ProjectFile.getProjectData();
                 var targetArgs = args.copy();
                 targetArgs.shift();
                 var targetList:Array<SysTarget> = [];
@@ -432,50 +519,27 @@ class Calamari {
                 for (arg in targetArgs) {
                     if (targetAliases.exists(arg)) {
                         if (!targetList.contains(targetAliases.get(arg))) {
-                            targetList.push(targetAliases.get(arg));
+                            var target = targetAliases.get(arg);
+                            if (!project.supportsTarget(target)) {
+                                error('That target is not supported by this project');
+                                continue;
+                            }
+                            targetList.push(target);
                         }
                     }
                 }
 
-                for (target in targetList) {
-                    var args = ['-p=src', '-m=Main', '-L=uuid'];
-                    var copyTo = './out/${getExecutableName(target, host==Windows, flags.contains('debug'))}';
-                    switch target {
-                        case Cpp:
-                            args.push('--cpp=$CPP');
-                            args.push('--cmd=cp ${CPP}Main${(host == Windows ? '.exe' : '')} $copyTo');
-                        case Csharp:
-                            args.push('--cs=$CSHARP');
-                            args.push('--cmd=cp ${CPP}Main${(host == Windows ? '.exe' : '')} $copyTo');
-                        case Hashlink:
-                            args.push('--hl=${HASHLINK}Cuttlefish.hl');
-                            args.push('--cmd=cp ${HASHLINK}Cuttlefish.hl $copyTo');
-                        case Java:
-                            args.push('--java=$JAVA');
-                            args.push('--cmd=cp ${JAVA}Main${flags.contains('debug') ? '-Debug' : ''}.jar $copyTo');
-                        case Jvm:
-                            args.push('--jvm=${JVM}Cuttlefish.jar');
-                            args.push('--cmd=cp ${JVM}Cuttlefish.jar $copyTo');
-                        case Nodejs:
-                            log('    Error: NodeJS is currently not supported due to `hxnodejs` not supporting threads.');
-                        case Neko:
-                            args.push('--neko=${NEKO}Cuttlefish.n');
-                            args.push('--cmd=cp ${NEKO}Cuttlefish.n $copyTo');
-                        case Python:
-                            args.push('--python=${PYTHON}Cuttlefish.py');
-                            args.push('--cmd=cp ${PYTHON}Cuttlefish.py $copyTo');
-                    }
-                    runHaxe(args);
-                }
+                build(targetList);
                 
                 //runHaxe(['-p=src',  '-m=Calamari', '-cpp=./build/', '--cmd=cp ./build/Calamari ./calamari2']);
                 // build command
             case 'datagen':
                 if (args.length == 1) {
                     log('    No Minecraft version provided. See `calamari help datagen` if you dont know how to use this command.');
-                    Sys.exit(0);
+                    exit(OK);
                 }
 
+                log('    Downloading data for Minecraft ${args[1]}');
                 downloadMinecraftVersion(args[1]);
                 //getMinecraftVersions();
                 // data generator command
@@ -485,8 +549,9 @@ class Calamari {
                 // build -> datagen -> run shorthand
             case 'buildall':
                 // build executables for all targets
+                build([Cpp, Csharp, Hashlink, Neko, Java, Jvm, Python]);
             case 'help':
-                log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)} - Help');
+                //log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)} - Help');
                 switch (args[1]) {
                     case 'commands':
                         log('List of commands:
@@ -548,7 +613,7 @@ Description:
     Builds Cuttlefish for all targets automatically.');
                     case 'help':
                         log('Basic help command. See `calamari help` for actual help.');
-                    default:
+                    case null:
                         log('Calamari is a utility for building and running Cuttlefish.
 Use `calamari help <page>` to see more about a certain topic.
 You can also use `calamari help <command>` to see more about a certain command.
@@ -556,19 +621,25 @@ If you just want to build a Cuttlefish executable, you can use `calamari build c
 List of help pages:
     commands - List of available commands
     targets - List of available targets and some details about each');
+                    default:
+                        if (rootCommandList.contains(args[1]))
+                            log('    No help page found for `calamari ${args[1]}`!');
+                        else
+                            error('Unknown help topic. Use `calamari help` to see what help topics you can view.');
                 }
             default:
                 log('Unknown command ${args[0]}');
-                Sys.exit(cast UnknownCommand);
+                exit(UnknownCommand);
 
         }
+        exit(OK);
     }
 
-    static function parseArgs(all:Array<String>):{flags:Array<String>, args:Array<String>, options:Map<String, String>} {
+    public static function parseArgs(all:Array<String>):{flags:Array<String>, args:Array<String>, options:Map<String, String>} {
         return {flags: [], args: [], options: []};
     }
 
-    static function parseCommand() {
+    public static function parseCommand() {
         var all = Sys.args();
 
         var pastArgs = false;
@@ -577,25 +648,27 @@ List of help pages:
             if (arg.startsWith('--')) {
                 pastArgs = true;
                 var eqPos = arg.indexOf('=');
+                var key;
+                var value = '';
                 if (eqPos < 0) {
-                    log('Invalid Arguments');
-                    Sys.exit(cast InvalidArguments);
+                    key = arg.substr(2);
+                } else {
+                    key = arg.substr(2, arg.indexOf('=')-2);
+                    value = arg.substr(arg.indexOf('=')+1);
                 }
-                var key = arg.substr(2, arg.indexOf('=')-2);
-                var value = arg.substr(arg.indexOf('=')+1);
                 if (options.exists(key)) options.set(key, options.get(key) + ' $value');
                 else options.set(key, value);
             } else if (arg.startsWith('-')) {
                 pastArgs = true;
                 if (flags.contains(arg.substr(1))) {
                     log('Duplicate flag: $arg');
-                    Sys.exit(cast DuplicateFlag);
+                    exit(DuplicateFlag);
                 }
                 flags.push(arg.substr(1));
             } else {
                 if (pastArgs) {
                     log('Command Error');
-                    Sys.exit(cast InvalidArguments);
+                    exit(InvalidArguments);
                 }
 
                 args.push(arg);

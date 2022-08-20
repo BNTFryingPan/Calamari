@@ -1,5 +1,5 @@
 # Calamari
-Utility for building and running [Cuttlefish](https://github.com/LeotomasMC/Cuttlefish).
+Utility for building and running [Cuttlefish](https://github.com/LeotomasMC/Cuttlefish), although it might be used for other projects as well in the future.
 
 ## completions
 Calamari supports tab completions in `zsh` and `bash`. adding the following to your `.zshrc` or `.bashrc` should allow completions/suggestions to show up:
