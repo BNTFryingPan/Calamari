@@ -3,13 +3,14 @@
 _calamari_complete_zsh() {
     local word completions
     word="$1"
-    completions="$(calamari --autocomplete=$words)"
+    #echo ${(j. .)words} > ~/.calamari/words.txt
+    completions="$(calamari -zsh --autocomplete=\"${(j. .)words}\")"
     reply=( "${(ps:\n:)completions}" )
 }
 
 _calamari_complete_bash() {
     local word="${COMP_WORDS[COMP_CWORD]}"
-    COMPREPLY=( $(compgen -W "$(calamari --autocomplete="$COMP_LINE")" -- $word) )
+    COMPREPLY=( $(compgen -W "$(calamari -bash --autocomplete="$COMP_LINE")" -- $word) )
 }
 
 if [ -n "$ZSH_VERSION" ]; then

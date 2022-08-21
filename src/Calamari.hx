@@ -55,9 +55,32 @@ enum HostArch {
     X86;
     X64;
 }
+
+enum abstract ANSICodes(String) {
+    var BLACK = '\u001b[30m';
+    var RED = '\u001b[31m';
+    var GREEN = '\u001b[32m';
+    var DARK_YELLOW = '\u001b[33m';
+    var BLUE = '\u001b[34m';
+    var MAGENTA = '\u001b[35m';
+    var DARK_CYAN = '\u001b[36m';
+    var LIGHT_GREY = '\u001b[37m';
+    var DARK_GREY = '\u001b[30;1m';
+    var LIGHT_RED = '\u001b[31;1m';
+    var LIGHT_GREEN = '\u001b[32;1m';
+    var YELLOW = '\u001b[33;1m';
+    var LIGHT_BLUE = '\u001b[34;1m';
+    var PINK = '\u001b[35;1m';
+    var CYAN = '\u001b[36;1m';
+    var WHITE = '\u001b[37;1m';
+    var RESET = '\u001b[0m';
+    var BOLD = '\u001b[1m';
+    var UNDERLINE = '\u001b[4m';
+}
+
 class Calamari {
     public static function log(text:String) {
-        if (!options.exists('autocomplete')) Sys.println(text);
+        if (!options.exists('autocomplete')) Sys.println('$WHITE$text$RESET');
         if (logFileOutput != null) {
             logFileOutput.writeString('$text\n');
             logFileOutput.flush();
@@ -65,7 +88,7 @@ class Calamari {
     }
 
     public static function error(text:String) {
-        log('\x1b[31;1m    Error:\x1b[0m\x1b[1m $text\x1b[0m');
+        log('$LIGHT_RED    Error:$RESET$BOLD $text');
     }
 
     public static var flags:Array<String> = [];
@@ -163,7 +186,7 @@ class Calamari {
         while (finished == false) {
             Sys.sleep(0.2);
         }
-        log('    Finished!');
+        log('${LIGHT_GREEN}Finished!');
     }
 
     public static function getPistionDataForVersion(version:String):VersionData {
@@ -274,10 +297,11 @@ class Calamari {
     }
 
     public static function getExecutableName(target:SysTarget, windows:Bool=false, debug:Bool=false) {
-        var name = 'Cuttlefish';
+        var proj = ProjectFile.getProjectData();
+        var name = '${proj.projectName}';
   
         if (debug) name += '.dev';
-        name += '-${File.getContent('./version.txt')}';
+        name += '-${proj.currentVersion}';
 
         var hash:String = null;
         var proc = new Process('git', ['rev-parse', 'HEAD']);
@@ -291,7 +315,7 @@ class Calamari {
            case Csharp: '.cs';
            case Hashlink: '.hl';
            case Java: '.jar';
-           case Nodejs: 'js';
+           case Nodejs: '.js';
            case Jvm: '.jvm.jar';
            case Neko: '.n';
            case Python: '.py';
@@ -306,7 +330,7 @@ class Calamari {
                 case X64: '.x64';
             }
 
-            if (windows) name += '.exe';
+            if (windows || target == Csharp) name += '.exe';
         }
 
         return name;
@@ -341,6 +365,7 @@ class Calamari {
 
     public static function getCompletions(input:String):Array<String> {
         log(input);
+        var proj = ProjectFile.getProjectData(false);
         flags.remove('nocache');
         var args = input.split(' ');
         args.shift();
@@ -394,7 +419,7 @@ class Calamari {
                     }
                 }
 
-                var unusedTargetAliases = [for (alias in targetCompletionAliases) if (!targetList.contains(targetAliases.get(alias))) alias];
+                var unusedTargetAliases = [for (alias in targetCompletionAliases) if (proj.supportsTarget(targetAliases.get(alias)) && !targetList.contains(targetAliases.get(alias))) alias];
                 return unusedTargetAliases;
             }
         }
@@ -408,42 +433,43 @@ class Calamari {
     public static var logFileOutput:FileOutput;
 
     public static function build(targets:Array<SysTarget>) {
+        var proj = ProjectFile.getProjectData();
         for (target in targets) {
-            var args = ['-p=src', '-m=Main', '-L=uuid'];
+            var args = ['-p=${proj.data.classPath}', '-m=${proj.data.mainClass}', '-L=uuid'];
             if (flags.contains('debug')) args.push('--debug');
-            var copyTo = './out/${getExecutableName(target, host==Windows, flags.contains('debug'))}';
+            var copyTo = '${proj.exportFolder}${getExecutableName(target, host==Windows, flags.contains('debug'))}';
             switch target {
                 case Cpp:
                     log('Building C++');
-                    args.push('--cpp=$CPP');
-                    args.push('--cmd=cp ${CPP}Main${(host == Windows ? '.exe' : '')} $copyTo');
+                    args.push('--cpp=${proj.buildFolder}$CPP');
+                    args.push('--cmd=cp ${proj.buildFolder}${CPP}${proj.data.mainClass}${(host == Windows ? '.exe' : '')} $copyTo');
                 case Csharp:
                     log('Building C#');
-                    args.push('--cs=$CSHARP');
-                    args.push('--cmd=cp ${CPP}Main${(host == Windows ? '.exe' : '')} $copyTo');
+                    args.push('--cs=${proj.buildFolder}$CSHARP');
+                    args.push('--cmd=cp ${proj.buildFolder}${CSHARP}/bin/${proj.data.mainClass}.exe $copyTo');
                 case Hashlink:
                     log('Building Hashlink');
-                    args.push('--hl=${HASHLINK}Cuttlefish.hl');
-                    args.push('--cmd=cp ${HASHLINK}Cuttlefish.hl $copyTo');
+                    args.push('--hl=${proj.buildFolder}${HASHLINK}${proj.projectName}.hl');
+                    args.push('--cmd=cp ${proj.buildFolder}${HASHLINK}${proj.projectName}.hl $copyTo');
                 case Java:
                     log('Building Java');
-                    args.push('--java=$JAVA');
-                    args.push('--cmd=cp ${JAVA}Main${flags.contains('debug') ? '-Debug' : ''}.jar $copyTo');
+                    args.push('--java=${proj.buildFolder}$JAVA');
+                    args.push('--cmd=cp ${proj.buildFolder}${JAVA}${proj.data.mainClass}${flags.contains('debug') ? '-Debug' : ''}.jar $copyTo');
                 case Jvm:
                     log('Building Java Bytecode');
-                    args.push('--jvm=${JVM}Cuttlefish.jar');
-                    args.push('--cmd=cp ${JVM}Cuttlefish.jar $copyTo');
+                    args.push('--jvm=${proj.buildFolder}${JVM}${proj.projectName}.jar');
+                    args.push('--cmd=cp ${proj.buildFolder}${JVM}${proj.projectName}.jar $copyTo');
                 case Nodejs:
                     error('NodeJS is currently not supported due to `hxnodejs` not supporting threads.');
                     continue;
                 case Neko:
                     log('Building Neko');
-                    args.push('--neko=${NEKO}Cuttlefish.n');
-                    args.push('--cmd=cp ${NEKO}Cuttlefish.n $copyTo');
+                    args.push('--neko=${proj.buildFolder}${NEKO}${proj.projectName}.n');
+                    args.push('--cmd=cp ${proj.buildFolder}${NEKO}${proj.projectName}.n $copyTo');
                 case Python:
                     log('Building Python');
-                    args.push('--python=${PYTHON}Cuttlefish.py');
-                    args.push('--cmd=cp ${PYTHON}Cuttlefish.py $copyTo');
+                    args.push('--python=${proj.buildFolder}${PYTHON}${proj.projectName}.py');
+                    args.push('--cmd=cp ${proj.buildFolder}${PYTHON}${proj.projectName}.py $copyTo');
             }
             runHaxe(args);
         }
@@ -455,8 +481,10 @@ class Calamari {
         parseCommand();
 
         if (options.exists('autocomplete')) {
+            log(Sys.args().toString());
             var completions = getCompletions(options.get('autocomplete'));
             var output = completions.join('\n'); 
+            log(completions.toString());
             for (choice in completions) {
                 Sys.println(choice);
             }
@@ -480,18 +508,45 @@ class Calamari {
             var out = File.write(getFullPath('~/.calamari/completion.sh'));
             out.writeString(Macros.fileContent('./scripts/completion.zsh'));
             out.close();
+            Sys.command('chmod', ['+x', getFullPath('~/.calamari/completion.sh')]);
             Sys.println(getFullPath('~/.calamari/completion.sh'));
             exit(OK);
         }
 
         if (args.length == 0) {
-            log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)}');
-            log('    No command provided - use `calamari help` for usage');
+            log('${CYAN}${BOLD}${UNDERLINE}Calamari $DARK_CYAN${Macros.versionString()}$WHITE - $DARK_GREY${Macros.commitHash().substr(0, 6)}');
+            log('    No command provided - use $RESET`calamari help`$WHITE for usage');
             exit(OK);
         }
 
         log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)}');
         switch (args[0]) {
+            case 'clean':
+                if (args.length == 1) {
+                    log('    No clean command provided. use `calamari help clean` for usage');
+                    exit(OK);
+                }
+                var proj = ProjectFile.getProjectData(false);
+                switch args[1] {
+                    case 'all':
+                        log('    Cleaning all temp data for this project...');
+                        if (host == Windows) Sys.command('del', [proj.buildFolder.replace('/', '\\')]);
+                        else Sys.command('rm', ['-rf', '${proj.buildFolder}']);
+                        if (host == Windows) Sys.command('del', [proj.exportFolder.replace('/', '\\')]);
+                        else Sys.command('rm', ['-rf', '${proj.exportFolder}']);
+                    case 'build' | 'compile':
+                        log('    Cleaning build folders');
+                        if (host == Windows) Sys.command('del', [proj.buildFolder.replace('/', '\\')]);
+                        else Sys.command('rm', ['-rf', '${proj.buildFolder}']);
+                    case 'export' | 'output' | 'out':
+                        log('    Cleaning export folder');
+                        if (host == Windows) Sys.command('del', [proj.exportFolder.replace("/", "\\")]);
+                        else Sys.command('rm', ['-rf', '${proj.exportFolder}']);
+                    default:
+                        error('Unknown clean command');
+                        exit(UnknownCommand);
+                }
+                log('Done!');
             case 'install':
                 log('    Attempting to install Calamari command...');
                 switch (host) {
@@ -511,7 +566,7 @@ class Calamari {
                         log('    Unknown platform! Can\'t provide install instructions.');
                 }
             case 'build':
-                var project = ProjectFile.getProjectData();
+                var project = ProjectFile.getProjectData(false);
                 var targetArgs = args.copy();
                 targetArgs.shift();
                 var targetList:Array<SysTarget> = [];
@@ -582,7 +637,10 @@ Examples:
     calamari build cpp hl jvm n
         Builds Cuttlefish as a native executable with C++, a Hashlink bytecode file, a jar file, and a Neko bytecode file');
                     case 'datagen':
-                    
+                        log('Data Generator Command Usage:
+    calamari datagen <minecraft version>
+Description:
+    Downloads the server jar for the specified version of Minecraft and runs its data generators. Cuttlefish needs some data extracted from the actual game in order to function properly, and this command will get this data.');
                     case 'run':
                         log('Run Command Usage:
     calamari run <target>

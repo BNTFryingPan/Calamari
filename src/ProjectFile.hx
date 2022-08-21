@@ -12,6 +12,7 @@ typedef ProjectFileStructure = {
     projectName:String,
     ?versionFile:String,
     mainClass:String,
+    classPath:String,
     ?libraries:Array<String>,
     ?supportedTargets:Array<String>,
     ?buildFolder:String,
@@ -26,21 +27,24 @@ class ProjectFile {
     public static final DEFAULT_EXPORT_FOLDER = "${root}/out/";
     public static final DEFAULT_PROJECT_FILE_NAME = 'project.calamari';
 
+    static var default_project:ProjectFile = null;
+
     public static function getProjectFileName():String {
         return Calamari.options.exists('project') ? Calamari.options.get('project') : DEFAULT_PROJECT_FILE_NAME;
     }
 
     public static function getProjectData(allowFail:Bool = true):Null<ProjectFile> {
+        if (default_project != null) return default_project;
         var exists = verifyRunningFromProjectFolder(!allowFail);
         if (!exists) return null;
 
-        return new ProjectFile('./${getProjectFileName()}');
+        return default_project = new ProjectFile('./${getProjectFileName()}');
     }
 
     public static function verifyRunningFromProjectFolder(checkOnly=false):Bool {
         if (!FileSystem.exists('./${getProjectFileName()}')) {
             if (!checkOnly) {
-                Calamari.log('    This command must be run from the root of a Calamari project.');
+                Calamari.error('This command must be run from the root of a Calamari project.');
                 Calamari.exit(WorkingDirNotACalamariProject);
             }
             return false;
