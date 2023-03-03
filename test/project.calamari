@@ -1,0 +1,22 @@
+{
+   "projectName": "calamari test project",
+   "versionFile": "version.txt",
+   "projectType": "haxe",
+   "classPaths": [
+      "src"
+   ],
+   "mainClass": "Main",
+   "options": [
+      {
+         "key": "test",
+         "defines": {
+            "test_define": "1"
+         }
+      },
+      {
+         "key": "alt",
+         "id": "alt",
+         "mainClass": "Alternate"
+      }
+   ]
+}

@@ -1,0 +1,48 @@
+{
+   "projectName": "calamari test project",
+   "versionFile": "version.txt",
+   "projectType": "haxe",
+   "mainClass": "Main",
+   "libraries": [
+      {
+         "name": "prism-lib",
+         "version": "https://git.team-prism.rocks/team-prism/prism-lib"
+      }
+   ],
+   "targets": [
+      {
+         "target": "nodejs",
+         "supported": false,
+         "reason": "unsupported reason"
+      },
+      {
+         "target": "hl",
+         "supported": true,
+         "defines": {
+            "test_define": "1"
+         }
+      }
+   ],
+   "options": [
+      {
+         "key": "test",
+         "defines": {
+            "test_define": "1"
+         }
+      },
+      {
+         "key": "alt",
+         "id": "alt",
+         "mainClass": "Alternate"
+      },
+      {
+         "key": "nolib",
+         "libraries": [
+            {
+               "name": "prism-lib",
+               "version": null
+            }
+         ]
+      }
+   ]
+}
