@@ -1,0 +1,4 @@
+-p=src
+--main Calamari
+--hl ./build/calamari.hl
+--cmd hl ./build/calamari.hl --autocomplete="calamari hel"

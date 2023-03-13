@@ -1,5 +1,8 @@
 package;
 
+using StringTools;
+using String;
+
 enum Token {
    Argument(name:String);
    Flag(name:String);
@@ -73,15 +76,15 @@ class Completion {
       Subcommand('test', []),
       Subcommand('buildall', [Flags]),
       Subcommand('help', [
-         Subcommand('install', [Flags]),
-         Subcommand('build', [Flags]),
-         Subcommand('datagen', [Flags]),
-         Subcommand('run', [Flags]),
-         Subcommand('test', [Flags]),
-         Subcommand('buildall', [Flags]),
-         Subcommand('help', [Flags]),
-         Subcommand('commands', [Flags]),
-         Subcommand('targets', [Flags]),
+         Subcommand('install', []),
+         Subcommand('build', []),
+         Subcommand('datagen', []),
+         Subcommand('run', []),
+         Subcommand('test', []),
+         Subcommand('buildall', []),
+         Subcommand('help', []),
+         Subcommand('commands', []),
+         Subcommand('targets', []),
       ]),
    ], [
       'version',
@@ -95,6 +98,125 @@ class Completion {
       Files('project', 'calamari'),
       Folders('out'),
    ]);
+
+   public static function getNodesMatchingInput(node:CompletionNode, input:Array<String>):Array<CompletionNode> {
+      switch (node) {
+         case Root(subcommands, flags, options):
+            var matchingSubcommands:Array<CompletionNode> = [];
+            for (subcommand in subcommands) {
+               switch subcommand {
+                  case Subcommand(name, children, desc):
+                     if (name.toLowerCase().startsWith(input[0].toLowerCase())) matchingSubcommands.push(subcommand);
+                  default:
+                     // invalid!
+               }
+            }
+            //var matching = subcommandNames.filter(s -> s.toLowerCase().startsWith(input[0].toLowerCase()));
+            if (matchingSubcommands.length == 1 && input.length > 1) {
+               input = input.slice(1);
+               return getNodesMatchingInput(matchingSubcommands[0], input);
+            }
+            return matchingSubcommands;
+         case Subcommand(name, children, desc):
+            var matchingSubcommands:Array<CompletionNode> = [];
+            for (subcommand in children) {
+               switch subcommand {
+                  case Subcommand(name, children, desc):
+                     if (name.toLowerCase().startsWith(input[0].toLowerCase())) matchingSubcommands.push(subcommand);
+                  default:
+                     // invalid!
+               }
+            }
+            //var matching = subcommandNames.filter(s -> s.toLowerCase().startsWith(input[0].toLowerCase()));
+            if (matchingSubcommands.length == 1 && input.length > 1) {
+               input = input.slice(1);
+               return getNodesMatchingInput(matchingSubcommands[0], input);
+            }
+            return matchingSubcommands;
+         case AllTargetAliases(keepShort, child):
+            return [node];
+            //if (keepShort) return [for (k in Calamari.targetAliases.keys()) k];
+            //return [for (k in Calamari.targetAliases.keys()) if (k.length >= 3) k];
+         case SupportedTargetAliases(keepShort, child):
+            return [node];
+            //if (keepShort) return [for (k in Calamari.targetAliases.keys()) k];
+            //return [for (k in Calamari.targetAliases.keys()) if (k.length >= 3) k];
+         case MinecraftVersions(requireServerJar, requireClientJar, snapshots, old):
+            return [node];
+            //return Calamari.getVersionCompletions(input[0]);
+         case Flags:
+            return [];
+      }
+      return [];
+   }
+
+   public static function getCompletions(str:String):Array<String> {
+      var arguments = [];
+      var buffer = '';
+      var escaped = false;
+      var doubleQuoted = false;
+      var singleQuoted = false;
+      
+      for (char in str) {
+         var c = char.fromCharCode();
+         if (escaped) {
+            buffer += c;
+            escaped = false;
+            continue;
+         }
+
+         if (char == '\\'.code) {
+            if (singleQuoted) {
+               buffer += c;
+               continue;
+            }
+            escaped = true;
+            continue;
+         }
+
+         if (c.isSpace(0)) {
+            if (singleQuoted || doubleQuoted) {
+               buffer += c;
+               continue;
+            }
+            if (buffer.length > 0) arguments.push(buffer);
+            buffer = '';
+            continue;
+         }
+
+         if (char == "'".code) {
+            if (doubleQuoted) {
+               buffer += c;
+               continue;
+            }
+            singleQuoted = !singleQuoted;
+            continue;
+         }
+
+         if (char == '"'.code) {
+            if (singleQuoted) {
+               buffer += c;
+               continue;
+            }
+            doubleQuoted = !doubleQuoted;
+            continue;
+         }
+
+         buffer += c;
+      }
+      if (buffer.length > 0) arguments.push(buffer);
+
+      if (arguments[0] == 'calamari') arguments.shift();
+      var completions = getNodesMatchingInput(tree, arguments);
+      trace(completions);
+      //return completions;
+      return [];
+      //trace(argv);
+
+      //trace(parts);
+
+      //return [];
+   }
 
    public static function parseSingleArg(arg:String):Token {
       if (arg.charCodeAt(0) == '-'.code) {

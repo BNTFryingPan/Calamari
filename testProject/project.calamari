@@ -1,0 +1,30 @@
+{
+   "projectName": "Test Project",
+   "versionFile": "${root}/version.txt",
+   "mainClass": "Main",
+   "classPath": "src",
+   "libraries": [
+      {"name": "haxeui-core", "version": "git"},
+      {"name": "haxeui-hxwidgets", "version": "git"},
+      {"name": "hxWidgets", "version": "git"}
+   ],
+   "targets": {
+      "cpp": true,
+      "csharp": true,
+      "hashlink": true,
+      "neko": true,
+      "java": true,
+      "jvm": true,
+      "python": true,
+      "nodejs": {"supported": false, "reason": "hxnodejs does not implement threads"}
+   },
+   "buildFolder": "${root}/build/",
+   "exportFolder": "${root}/out/",
+   "settings": {
+      "gui": {
+         "type": "flag",
+         "define": "gui",
+         "libraries": ["haxeui-core"]
+      }
+   }
+}

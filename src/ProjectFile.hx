@@ -8,15 +8,48 @@ import Calamari;
 
 using StringTools;
 
+abstract OneOfTwo<TypeA, TypeB>(Dynamic) from TypeA from TypeB to TypeA to TypeB {}
+
+typedef HaxeLibLibrary = OneOfTwo<String, {
+    name:String,
+    ?version:String,
+    ?url:String,
+}>;
+
+enum abstract ProjectSettingType(String) from String to String {
+    var FLAG = 'flag';
+    var NUMBER = 'number';    
+}
+
+typedef ProjectSetting = {
+    var type:ProjectSettingType;
+    /**
+        what the name of the flag will be
+    **/
+    var define:String;
+    @:optional var libraries:Array<HaxeLibLibrary>;
+
+    // for NUMBER settings
+    // what the min and max allowed values are
+    @:optional var min:Float;
+    @:optional var max:Float;
+}
+
+typedef TargetSupportStatus = OneOfTwo<Bool, {
+    supported:Bool,
+    ?reason:String,
+}>;
+
 typedef ProjectFileStructure = {
     projectName:String,
     ?versionFile:String,
     mainClass:String,
     classPath:String,
-    ?libraries:Array<String>,
-    ?supportedTargets:Array<String>,
+    ?libraries:Array<HaxeLibLibrary>,
+    ?targets:Map<String, TargetSupportStatus>,
     ?buildFolder:String,
     ?exportFolder:String,
+    ?settings:Map<String, ProjectSetting>,
 }
 
 class ProjectFile {
@@ -80,8 +113,15 @@ class ProjectFile {
     }
 
     public function supportsTarget(target:SysTarget):Bool {
+        trace('checking $target');
         for (alias => t in Calamari.targetAliases) {
-            if (t == target && data.supportedTargets.contains(alias)) return true;
+            trace('alias $alias');
+            if (t != target) continue;
+            if (!data.targets.exists(alias)) return false;
+            var supported = data.targets.get(alias);
+            if (supported is Bool) return supported;
+            (supported : TargetSupportStatus);
+            return supported.supported;
         }
         return false;
     }

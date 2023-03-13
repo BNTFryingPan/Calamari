@@ -3,3 +3,8 @@
 --cpp ./build/
 --cmd cp ./build/Calamari ./calamari
 --cmd ./calamari install
+
+
+#-m Calamari2
+#--hl build/calamari2.hl
+#--cmd cp ./build/calamari2.hl ./calamari2.hl

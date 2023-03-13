@@ -1,5 +1,6 @@
 package;
 
+import haxe.PosInfos;
 import sys.io.FileOutput;
 import haxe.Json;
 import sys.FileSystem;
@@ -18,6 +19,7 @@ enum abstract ExitCode(Int) {
     var UnknownCommand = 3;
     var WorkingDirNotACalamariProject = 4;
     var VersionExistsButNoServerJar = 5;
+    var InvalidTarget = 6;
 }
 
 enum abstract TargetLocations(String) {
@@ -56,6 +58,12 @@ enum HostArch {
     X64;
 }
 
+enum abstract CSharpRuntime(String) {
+    var WINE = 'wine';
+    var MONO = 'mono';
+    //var DOTNET = 'dotnet';
+}
+
 enum abstract ANSICodes(String) {
     var BLACK = '\u001b[30m';
     var RED = '\u001b[31m';
@@ -79,10 +87,10 @@ enum abstract ANSICodes(String) {
 }
 
 class Calamari {
-    public static function log(text:String) {
+    public static function log(text:String, ?pos:PosInfos) {
         if (!options.exists('autocomplete')) Sys.println('$WHITE$text$RESET');
         if (logFileOutput != null) {
-            logFileOutput.writeString('$text\n');
+            logFileOutput.writeString('${pos.fileName}@${pos.lineNumber}: $text\n');
             logFileOutput.flush();
         }
     }
@@ -95,13 +103,16 @@ class Calamari {
     public static var options:Map<String, String> = [];
     public static var args:Array<String> = [];
 
-    public static function runHaxe(args:Array<String>) {
+    public static function runHaxe(args:Array<String>):Bool {
+        log('Running Haxe: ${args.join(' ')}');
         var proc = new Process('haxe', args);
         var exit = proc.exitCode();
         if (exit != 0) {
             var out = proc.stderr.readAll().toString();
             log('Error running Haxe: $out');
         };
+        return exit == 0;
+        //log('args were: ${args}');
     }
 
     public static function exit(code:ExitCode) {
@@ -119,6 +130,7 @@ class Calamari {
         'version' => ['', 'hash', 'long', 'short'],
         'project' => ['@'],
         'out' => ['@'],
+        'csr' => ['wine', 'mono', /*'dotnet'*/], // dotnet support maybe oneday?
     ];
     public static final targetAliases = [
         // C++
@@ -364,6 +376,8 @@ class Calamari {
     }
 
     public static function getCompletions(input:String):Array<String> {
+        //return Completion.getCompletions(input);
+        
         log(input);
         var proj = ProjectFile.getProjectData(false);
         flags.remove('nocache');
@@ -406,11 +420,11 @@ class Calamari {
             return getVersionCompletions(args[2].toLowerCase());
         }
         if (args.length >= 2) {
-            if (args[0] == 'build') {
+            if (proj != null && args[0] == 'build') {
                 var targetArgs = args.copy();
                 targetArgs.shift();
                 var targetList:Array<SysTarget> = [];
-
+                log('loop');
                 for (arg in targetArgs) {
                     if (targetAliases.exists(arg)) {
                         if (!targetList.contains(targetAliases.get(arg))) {
@@ -418,12 +432,14 @@ class Calamari {
                         }
                     }
                 }
-
+                log('return');
                 var unusedTargetAliases = [for (alias in targetCompletionAliases) if (proj.supportsTarget(targetAliases.get(alias)) && !targetList.contains(targetAliases.get(alias))) alias];
+                log('a');
                 return unusedTargetAliases;
             }
         }
         return [];
+        //*/
     }
 
     public static function getScriptPath():String {
@@ -432,10 +448,25 @@ class Calamari {
 
     public static var logFileOutput:FileOutput;
 
-    public static function build(targets:Array<SysTarget>) {
+    public static function build(targets:Array<SysTarget>, run:Bool=false) {
         var proj = ProjectFile.getProjectData();
         for (target in targets) {
-            var args = ['-p=${proj.data.classPath}', '-m=${proj.data.mainClass}', '-L=uuid'];
+            var args = ['-p=${proj.data.classPath}', '-m=${proj.data.mainClass}', '-D=WXSTATIC'];
+            //var libraries = [];
+            for (lib in proj.data.libraries) {
+                //trace(lib);
+                if (lib is String) {
+                    //log('string');
+                    args.push('-L=${lib}');
+                } else {
+                    //log('not string');
+                    var l:Dynamic = lib;
+                    if (l.url == null) {
+                        if (l.version == null) args.push('-L=${l.name}');
+                        else args.push('-L=${l.name}:${l.version}');
+                    } else args.push('-L=${l.name}:git:${l.url}');
+                }
+            }
             if (flags.contains('debug')) args.push('--debug');
             var copyTo = '${proj.exportFolder}${getExecutableName(target, host==Windows, flags.contains('debug'))}';
             switch target {
@@ -471,7 +502,33 @@ class Calamari {
                     args.push('--python=${proj.buildFolder}${PYTHON}${proj.projectName}.py');
                     args.push('--cmd=cp ${proj.buildFolder}${PYTHON}${proj.projectName}.py $copyTo');
             }
-            runHaxe(args);
+            var success = runHaxe(args);
+
+            if (run && success && targets.length == 1) {
+                var cmd = switch target {
+                    case Cpp:
+                        '$copyTo';
+                    case Csharp:
+                        if (host == Windows) {'$copyTo';}
+                        else {
+                            var runtime = 'mono';
+                            if (options.exists('csr')) runtime = options.get('csr');
+                            '$runtime $copyTo';
+                        }
+                    case Hashlink:
+                        'hl $copyTo';
+                    case Java | Jvm:
+                        'java -jar $copyTo';
+                    case Nodejs:
+                        'node $copyTo'; // ?
+                    case Neko:
+                        'neko $copyTo';
+                    case Python:
+                        'python3 $copyTo';
+                }
+                Sys.command(cmd);
+                return;
+            }
         }
     }
 
@@ -514,7 +571,7 @@ class Calamari {
         }
 
         if (args.length == 0) {
-            log('${CYAN}${BOLD}${UNDERLINE}Calamari $DARK_CYAN${Macros.versionString()}$WHITE - $DARK_GREY${Macros.commitHash().substr(0, 6)}');
+            log('${CYAN}${BOLD}Calamari $DARK_CYAN${Macros.versionString()}$WHITE - $DARK_GREY${Macros.commitHash().substr(0, 6)}');
             log('    No command provided - use $RESET`calamari help`$WHITE for usage');
             exit(OK);
         }
@@ -566,24 +623,28 @@ class Calamari {
                         log('    Unknown platform! Can\'t provide install instructions.');
                 }
             case 'build':
-                var project = ProjectFile.getProjectData(false);
+                var project = ProjectFile.getProjectData(true);
                 var targetArgs = args.copy();
                 targetArgs.shift();
                 var targetList:Array<SysTarget> = [];
-
+                trace('finding targets $targetArgs');
                 for (arg in targetArgs) {
+                    trace('checking $arg');
                     if (targetAliases.exists(arg)) {
+                        trace('exists');
                         if (!targetList.contains(targetAliases.get(arg))) {
+                            trace('not duplicated');
                             var target = targetAliases.get(arg);
                             if (!project.supportsTarget(target)) {
                                 error('That target is not supported by this project');
                                 continue;
                             }
+                            trace('adding to list');
                             targetList.push(target);
                         }
                     }
                 }
-
+                trace('attempting build');
                 build(targetList);
                 
                 //runHaxe(['-p=src',  '-m=Calamari', '-cpp=./build/', '--cmd=cp ./build/Calamari ./calamari2']);
@@ -601,6 +662,14 @@ class Calamari {
             case 'run':
                 // run command
             case 'test':
+                var project = ProjectFile.getProjectData(false);
+                var targetArg = args[1];
+                if (targetAliases.exists(targetArg)) {
+                    build([targetAliases.get(targetArg)], true);
+                } else {
+                    error('    Invalid target.');
+                    exit(InvalidTarget);
+                }
                 // build -> datagen -> run shorthand
             case 'buildall':
                 // build executables for all targets

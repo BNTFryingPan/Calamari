@@ -3,6 +3,8 @@ package;
 #if !display
 import sys.FileSystem;
 import sys.io.File;
+
+using StringTools;
 #end
 
 class Macros {
@@ -33,6 +35,15 @@ class Macros {
     public static macro function fileContent(path:String) {
         var content = '';
         #if !display
+        if (FileSystem.exists(path)) content = File.getContent(path);
+        #end
+        return macro $v{content};
+    }
+
+    public static macro function getText(id:String) {
+        var content = '';
+        #if !display
+        var path = './text/${id.replace('.', '/')}.txt';
         if (FileSystem.exists(path)) content = File.getContent(path);
         #end
         return macro $v{content};
