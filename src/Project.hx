@@ -7,7 +7,5 @@ class Project {
       this.file = file;
    }
 
-   public function build(target:SysTarget) {
-      var args = ['--class-path=${file.data.classPath}']
-   }
+   public function build(target:SysTarget) {}
 }

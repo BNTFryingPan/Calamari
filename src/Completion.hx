@@ -15,6 +15,7 @@ enum CompletionNode {
       @param options Array of `Option` nodes that can be suggested as options
    **/
    Root(subcommands:Array<CompletionNode>, flags:Array<String>, options:Array<OptionNode>);
+
    /**
       a subcommand.
 
@@ -22,6 +23,7 @@ enum CompletionNode {
       @param children either an array containing 1 non-`Subcommand` completion node, or multiple `Subcommand` nodes
    **/
    Subcommand(name:String, children:Array<CompletionNode>, ?desc:String);
+
    /**
       lists aliases for all targets.
 
@@ -29,6 +31,7 @@ enum CompletionNode {
       @param child the next completion node. if null, will keep suggesting unused target names until the user adds a `-` to start a flag or option. use the `Flags` node if this is the last argument and you only want 1 target suggested.
    **/
    AllTargetAliases(keepShort:Bool, child:Null<CompletionNode>);
+
    /**
       same as `AllTargetAliases`, but instead of showing aliases for all targets, it will only show aliases supported by the selected project. if no project is selected or can be found, it will act identically to `AllTargetAliases`.
 
@@ -36,6 +39,7 @@ enum CompletionNode {
       @param child the next completion node. if null, will keep suggesting unused target names until the user adds a `-` to start a flag or option. use the `Flags` node if this is the last argument and you only want 1 target suggested.
    **/
    SupportedTargetAliases(keepShort:Bool, child:Null<CompletionNode>); // lists only aliases for targets supported by the project in the selected project file
+
    /**
       suggests minecraft versions
 
@@ -45,6 +49,7 @@ enum CompletionNode {
       @param old if true, will include versions of minecraft before release 1.0
    **/
    MinecraftVersions(requireServerJar:Bool, requireClientJar:Bool, snapshots:Bool, old:Bool);
+
    /**
       indicates that only flags and options should be suggested at this point
    **/
@@ -103,7 +108,7 @@ class Completion {
             if (valueSep < 0) {
                return Option(arg.substring(2), null);
             }
-            return Option(arg.substring(2, valueSep), arg.substring(valueSep+1));
+            return Option(arg.substring(2, valueSep), arg.substring(valueSep + 1));
          }
          return Flag(arg.substring(1));
       }
@@ -126,8 +131,10 @@ class Completion {
             case Flag(name):
                trace('flag: "$name"');
             case Option(name, value):
-               if (value == null) trace('option: "$name"');
-               else trace('option "$name"="$value"');
+               if (value == null)
+                  trace('option: "$name"');
+               else
+                  trace('option "$name"="$value"');
          }
       }
 

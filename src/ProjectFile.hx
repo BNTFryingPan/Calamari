@@ -69,6 +69,7 @@ typedef ProjectFileStructure = {
    ?options:Array<Option>,
 }
 
+// unused!
 typedef Library = {
    /**
     * the name of the library
@@ -242,9 +243,20 @@ class ProjectFile {
          }
       }
 
-      function handleTarget(thing:TargetSupport) {}
+      var handledTargets:Array<SysTarget> = [];
 
-      return null;
+      function handleTarget(thing:TargetSupport) {
+         var thingTarget = Calamari.resolveTargetAlias(thing.target);
+
+         if (!handledTargets.contains(thingTarget))
+            if (thingTarget != target) {
+               return;
+            }
+
+         apply(thing);
+      }
+
+      return resolved;
    }
 
    public static function getProjectData(allowFail:Bool = true):Null<ProjectFile> {
@@ -285,7 +297,7 @@ class ProjectFile {
       return File.getContent(getRelativePath(data.versionFile));
    }
 
-   public function supportsTarget(target:SysTarget):Bool {
+   /*public function supportsTarget(target:SysTarget):Bool {
       var matches = data.targets.filter((t) -> {
          return Calamari.resolveTargetAlias(t.target);
       })
@@ -294,10 +306,9 @@ class ProjectFile {
          /*for (alias => t in Calamari.targetAliases) {
             if (t == target && data.targets.contains(alias))
                return true;
-         }*/
-         return false;
-   }
-
+   }*/
+   // return false;
+   // }
    public var buildFolder(get, never):String;
 
    function get_buildFolder():String {
