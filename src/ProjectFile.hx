@@ -30,6 +30,10 @@ typedef ProjectSettings = {
     */
    ?targets:Array<TargetSupport>,
    /**
+    * for internal use. dont try to create this in your json file!
+    */
+   ?_targets:Map<SysTarget, TargetSupport>,
+   /**
     * the folder to build to. actually creates folders for each target in the folder given here, `${buildFolder}/${target}/`
     */
    ?buildFolder:String,
@@ -38,7 +42,7 @@ typedef ProjectSettings = {
     */
    ?exportFolder:String,
    /**
-    * hxml file to include
+    * hxml files to include
     */
    ?hxml:Array<String>,
    /**
@@ -88,7 +92,7 @@ typedef Library = {
 /**
  * an option or flag that can be passed when running `calamari` to modify the behavior of the build.
  * can override most of the base project settings, including target support, libraries, or even the main class
- * overrides for array options will add to the base project in the order that the flags are specified when the command is ran
+ * overrides for array options will add to the base project, but not always in the order that the flags are specified when the command is ran
  */
 typedef Option = {
    > ProjectSettings,
@@ -144,6 +148,7 @@ enum abstract ProjectType(String) from String to String {
 
 class ProjectFile {
    public var data:ProjectFileStructure;
+   public var resolved:Null<ProjectFileStructure>;
 
    final path:String;
 
@@ -187,20 +192,35 @@ class ProjectFile {
       trace(data);
    }
 
+   public function toString(flags:Array<String>, ?target:SysTarget):String {
+      var resolved = resolveProjectSettings(target, flags);
+      var ret = 'ProjectFile{';
+      ret += 'projectName: ${resolved.projectName}, ';
+      ret += 'versionFile: ${resolved.versionFile}, ';
+      ret += 'projectType: ${resolved.projectType}, ';
+      ret += 'mainClass: ${resolved.mainClass}, ';
+      ret += 'classPaths: ${resolved.classPaths}, ';
+      ret += 'files: ${resolved.files}, ';
+      ret += 'libraries: ${resolved.libraries}, ';
+      ret += 'targets: ${resolved._targets}, ';
+      ret += 'buildFolder: ${resolved.buildFolder}, ';
+      ret += 'exportFolder: ${resolved.exportFolder}, ';
+      ret += 'hxml: ${resolved.hxml}, ';
+      ret += 'defines: ${resolved.defines}}';
+      return ret;
+   }
+
    public function resolveProjectSettings(target:Null<SysTarget>, flags:Array<String>):ProjectFileStructure {
       var resolved:ProjectFileStructure = {
          projectName: this.data.projectName,
          versionFile: this.data.versionFile,
          projectType: this.data.projectType,
-         mainClass: this.data.mainClass,
-         classPaths: this.data.classPaths,
-         files: this.data.files,
-         libraries: this.data.libraries,
-         targets: this.data.targets,
-         buildFolder: this.data.buildFolder,
-         exportFolder: this.data.exportFolder,
-         hxml: this.data.hxml,
-         defines: this.data.defines,
+         classPaths: [],
+         files: [],
+         hxml: [],
+         defines: [],
+         libraries: [],
+         _targets: [],
       }
 
       function apply(thing:ProjectSettings) {
@@ -209,7 +229,7 @@ class ProjectFile {
          if (thing.buildFolder != null)
             resolved.buildFolder = thing.buildFolder;
          if (thing.exportFolder != null)
-            resolved.exportFolder = thing.buildFolder;
+            resolved.exportFolder = thing.exportFolder;
 
          if (thing.classPaths != null)
             resolved.classPaths = resolved.classPaths.concat(thing.classPaths);
@@ -239,9 +259,13 @@ class ProjectFile {
          }
 
          if (thing.targets != null) {
-            // for (target)
+            for (curTarget in thing.targets) {
+               resolved._targets.set(Calamari.resolveTargetAlias(curTarget.target), curTarget);
+            }
          }
       }
+
+      apply(this.data);
 
       var handledTargets:Array<SysTarget> = [];
 
@@ -256,7 +280,13 @@ class ProjectFile {
          apply(thing);
       }
 
-      return resolved;
+      if (this.data.options != null) {
+         var consideredOptions = this.data.options.filter(opt -> flags.contains(opt.key));
+         for (option in consideredOptions) {
+            apply(option);
+         }
+      }
+      return this.resolved = resolved;
    }
 
    public static function getProjectData(allowFail:Bool = true):Null<ProjectFile> {
@@ -286,15 +316,21 @@ class ProjectFile {
    public var projectName(get, never):String;
 
    function get_projectName():String {
-      return data.projectName;
+      return resolved.projectName;
    }
 
    public var currentVersion(get, never):String;
 
    function get_currentVersion():String {
-      if (data.versionFile == null)
+      if (resolved.versionFile == null)
          return '';
-      return File.getContent(getRelativePath(data.versionFile));
+      return File.getContent(getRelativePath(resolved.versionFile));
+   }
+
+   public function supportsTarget(target:SysTarget):Bool {
+      if (!resolved._targets.exists(target))
+         return false;
+      return resolved._targets.get(target).supported;
    }
 
    /*public function supportsTarget(target:SysTarget):Bool {
@@ -312,16 +348,16 @@ class ProjectFile {
    public var buildFolder(get, never):String;
 
    function get_buildFolder():String {
-      if (data.buildFolder != null)
-         return getRelativePath(data.buildFolder);
+      if (resolved.buildFolder != null)
+         return getRelativePath(resolved.buildFolder);
       return getRelativePath(DEFAULT_BUILD_FOLDER);
    }
 
    public var exportFolder(get, never):String;
 
    function get_exportFolder():String {
-      if (data.exportFolder != null)
-         return getRelativePath(data.exportFolder);
+      if (resolved.exportFolder != null)
+         return getRelativePath(resolved.exportFolder);
       return getRelativePath(DEFAULT_EXPORT_FOLDER);
    }
 }

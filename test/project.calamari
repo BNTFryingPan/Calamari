@@ -6,6 +6,12 @@
       "src"
    ],
    "mainClass": "Main",
+   "targets": [
+      {
+         "target": "cpp",
+         "supported": true
+      }
+   ],
    "options": [
       {
          "key": "test",

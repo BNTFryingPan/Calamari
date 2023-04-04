@@ -1,5 +1,7 @@
 package;
 
+import commands.Help;
+import commands.Command;
 import sys.io.FileOutput;
 import haxe.Json;
 import sys.FileSystem;
@@ -12,7 +14,7 @@ import MinecraftManifests;
 
 using StringTools;
 
-enum abstract ExitCode(Int) {
+enum abstract ExitCode(Int) from Int to Int {
    var OK = 0;
    var InvalidArguments = 1;
    var DuplicateFlag = 2;
@@ -20,6 +22,9 @@ enum abstract ExitCode(Int) {
    var WorkingDirNotACalamariProject = 4;
    var VersionExistsButNoServerJar = 5;
    var MultipleCalamariProjectsFound = 6;
+   var TargetNotSupportedByProject = 7;
+   var NoMainClassSpecified = 8;
+   var HelpTopicNotFound = 9;
 }
 
 enum abstract TargetLocations(String) {
@@ -89,6 +94,8 @@ class Calamari {
          logFileOutput.flush();
       }
    }
+
+   public static var commands:Map<String, Class<ICommand>> = ['help' => Help,];
 
    public static function error(text:String) {
       log('$LIGHT_RED    Error:$RESET$BOLD $text');
@@ -470,44 +477,69 @@ class Calamari {
    public static function build(targets:Array<SysTarget>) {
       var proj = ProjectFile.getProjectData();
       for (target in targets) {
-         var args = ['-p=${proj.data.classPaths[0]}', '-m=${proj.data.mainClass}', '-L=uuid'];
+         proj.resolveProjectSettings(target, flags);
+         var args = [];
+         if (proj.resolved.classPaths != null)
+            for (classPath in proj.resolved.classPaths)
+               args.push('--class-path=${classPath}');
+         if (proj.resolved.files != null)
+            for (file in proj.resolved.files)
+               args.push(file);
+         if (proj.resolved.hxml != null)
+            for (hxml in proj.resolved.hxml)
+               args.push(hxml);
+         if (proj.resolved.libraries != null)
+            for (library => version in proj.resolved.libraries)
+               args.push('--library=${library}' + version == null ? '' : ':${version}');
+         if (proj.resolved.mainClass == null) {
+            error('No main class defined!');
+            exit(ExitCode.NoMainClassSpecified);
+            return;
+         }
+         args.push('--main=${proj.resolved.mainClass}');
          if (flags.contains('debug'))
             args.push('--debug');
-         var copyTo = '${proj.exportFolder}${getExecutableName(target, host == Windows, flags.contains('debug'))}';
+         var copyFrom = '';
+         var copyTo = '${proj.resolved.exportFolder}${getExecutableName(target, host == Windows, flags.contains('debug'))}';
          switch target {
             case Cpp:
                log('Building C++');
-               args.push('--cpp=${proj.buildFolder}$CPP');
-               args.push('--cmd=cp ${proj.buildFolder}${CPP}${proj.data.mainClass}${(host == Windows ? '.exe' : '')} $copyTo');
+               copyFrom = '${proj.resolved.buildFolder}${CPP}${proj.resolved.mainClass}${(host == Windows ? '.exe' : '')}';
+               args.push('--cpp=${proj.resolved.buildFolder}$CPP');
             case Csharp:
                log('Building C#');
-               args.push('--cs=${proj.buildFolder}$CSHARP');
-               args.push('--cmd=cp ${proj.buildFolder}${CSHARP}/bin/${proj.data.mainClass}.exe $copyTo');
+               args.push('--cs=${proj.resolved.buildFolder}$CSHARP');
+               copyFrom = '${proj.resolved.buildFolder}${CSHARP}/bin/${proj.resolved.mainClass}.exe';
             case Hashlink:
                log('Building Hashlink');
-               args.push('--hl=${proj.buildFolder}${HASHLINK}${proj.projectName}.hl');
-               args.push('--cmd=cp ${proj.buildFolder}${HASHLINK}${proj.projectName}.hl $copyTo');
+               args.push('--hl=${proj.resolved.buildFolder}${HASHLINK}${proj.resolved.projectName}.hl');
+               copyFrom = '${proj.resolved.buildFolder}${HASHLINK}${proj.resolved.projectName}.hl';
             case Java:
                log('Building Java');
-               args.push('--java=${proj.buildFolder}$JAVA');
-               args.push('--cmd=cp ${proj.buildFolder}${JAVA}${proj.data.mainClass}${flags.contains('debug') ? '-Debug' : ''}.jar $copyTo');
+               args.push('--java=${proj.resolved.buildFolder}$JAVA');
+               copyFrom = '${proj.resolved.buildFolder}${JAVA}${proj.resolved.mainClass}${flags.contains('debug') ? '-Debug' : ''}.jar';
             case Jvm:
                log('Building Java Bytecode');
-               args.push('--jvm=${proj.buildFolder}${JVM}${proj.projectName}.jar');
-               args.push('--cmd=cp ${proj.buildFolder}${JVM}${proj.projectName}.jar $copyTo');
+               copyFrom = '${proj.resolved.buildFolder}${JVM}${proj.resolved.projectName}.jar';
+               args.push('--jvm=$copyFrom');
             case Nodejs:
-               error('NodeJS is currently not supported due to `hxnodejs` not supporting threads.');
-               continue;
+               log('Building NodeJS');
+               args.push('--library=hxnodejs');
+               copyFrom = '${proj.resolved.buildFolder}${NODEJS}${proj.resolved.projectName}.js';
+               args.push('--js=$copyFrom');
             case Neko:
                log('Building Neko');
-               args.push('--neko=${proj.buildFolder}${NEKO}${proj.projectName}.n');
-               args.push('--cmd=cp ${proj.buildFolder}${NEKO}${proj.projectName}.n $copyTo');
+               copyFrom = '${proj.resolved.buildFolder}${NEKO}${proj.resolved.projectName}.n';
+               args.push('--neko=$copyFrom');
             case Python:
                log('Building Python');
-               args.push('--python=${proj.buildFolder}${PYTHON}${proj.projectName}.py');
-               args.push('--cmd=cp ${proj.buildFolder}${PYTHON}${proj.projectName}.py $copyTo');
+               copyFrom = '${proj.resolved.buildFolder}${PYTHON}${proj.resolved.projectName}.py';
+               args.push('--python=$copyFrom');
          }
+
          runHaxe(args);
+
+         Sys.command('cp $copyFrom $copyTo');
       }
    }
 
@@ -556,13 +588,24 @@ class Calamari {
       }
 
       if (args.length == 0) {
-         log('${CYAN}${BOLD}${UNDERLINE}Calamari $DARK_CYAN${Macros.versionString()}$WHITE - $DARK_GREY${Macros.commitHash().substr(0, 6)}');
+         log('${CYAN}${BOLD}Calamari $DARK_CYAN${Macros.versionString()}$WHITE - $DARK_GREY${Macros.commitHash().substr(0, 6)}' #if debug + ' DEBUG' #end);
          log('    No command provided - use $RESET`calamari help`$WHITE for usage');
          exit(OK);
       }
 
-      log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)}');
-      switch (args[0]) {
+      var command = args.shift();
+
+      log('${CYAN}${BOLD}Calamari $DARK_CYAN${Macros.versionString()}$WHITE - $DARK_GREY${Macros.commitHash().substr(0, 6)}' #if debug + ' DEBUG' #end);
+      if (commands.exists(command)) {
+         trace('running!');
+         exit(Type.createInstance(commands.get(command), []).execute(args, flags, options));
+      }
+
+      switch (command) {
+         case 'projectfiletest':
+            var proj = ProjectFile.getProjectData(false);
+            var target:Null<SysTarget> = args.length > 1 ? resolveTargetAlias(args[1]) : null;
+            log(proj.toString(Calamari.flags, target));
          case 'clean':
             if (args.length == 1) {
                log('    No clean command provided. use `calamari help clean` for usage');
@@ -642,20 +685,29 @@ class Calamari {
          case 'run':
          // run command
          case 'test':
+            var project = ProjectFile.getProjectData(false);
+            var target = resolveTargetAlias(args[1]);
+            project.resolveProjectSettings(target, flags);
+            if (!project.supportsTarget(target)) {
+               error('That target is not supported by this project!');
+               exit(ExitCode.TargetNotSupportedByProject);
+            }
+
+            build([target]);
          // build -> datagen -> run shorthand
-         case 'buildall':
-            // build executables for all targets
-            build([Cpp, Csharp, Hashlink, Neko, Java, Jvm, Python]);
+         // case 'buildall':
+         // build executables for all targets
+         // build([Cpp, Csharp, Hashlink, Neko, Java, Jvm, Python]);
          case 'help':
             // log('Calamari ${Macros.versionString()} - ${Macros.commitHash().substr(0, 6)} - Help');
             switch (args[1]) {
                case 'commands':
                   log('List of commands:
-    build <list of targets> - Builds Cuttlefish for the specified target
-    datagen [version] - Attempts to download the server jar for the provided Minecraft version and runs its Data Generators. If you do not provide a version it defaults to 1.19.0
-    run <target> - Finds the most recent build of Cuttlefish and runs it if one exists
-    test <target> [version] - Builds, generates data for, and then runs Cuttlefish for the specified target. Uses the latest supported version of Minecraft by default
-    buildall - Builds Cuttlefish for all targets automatically
+    build <list of targets> - Builds the project for the specified target
+    datagen [version] - Attempts to download the server jar for the provided Minecraft version and runs its Data Generators. If you do not provide a version it defaults to 1.19.0. May be removed in the future
+    run <target> - Finds the most recent build of the project and runs it if one exists
+    test <target> - Builds and then runs the project for the specified target.
+    buildall - Builds the project for all supported targets automatically
     help - Basic help command for how to use Calamari');
                case 'targets':
                   log('List of targets and the available aliases to refer to them:
@@ -664,19 +716,19 @@ class Calamari {
     Hashlink: hl, hashlink
     Java: java, hxjava
     Java Bytecode: jvm
-    NodeJS: js, node, nodejs, hxnodejs. Note: NodeJS is currently not supported due to a lack of thread support in `hxnodejs`.
+    NodeJS: js, node, nodejs, hxnodejs
     Neko: neko, n
     Python: python, py');
                case 'build':
                   log('Build Command Usage:
     calamari build <targets>
 Description:
-    Builds Cuttlefish for the specified targets. See `calamari help targets` for a list of available targets.
+    Builds the project for the specified targets. See `calamari help targets` for a list of available targets.
 Arguments:
     targets - A list of at least 1 target
 Examples:
     calamari build cpp hl jvm n
-        Builds Cuttlefish as a native executable with C++, a Hashlink bytecode file, a jar file, and a Neko bytecode file');
+        Builds the project as a native executable with C++, a Hashlink bytecode file, a jar file, and a Neko bytecode file');
                case 'datagen':
                   log('Data Generator Command Usage:
     calamari datagen <minecraft version>
@@ -686,7 +738,7 @@ Description:
                   log('Run Command Usage:
     calamari run <target>
 Description:
-    Runs the latest locally available build of Cuttlefish for the specified target.
+    Runs the latest locally available build of the project for the specified target.
 Arguments:
     target - a single target to search for
 Examples:
@@ -696,27 +748,23 @@ Examples:
                   log('Test Command Usage:
     calamari test <target> [version]
 Description:
-    Builds Cuttlefish for the specified target, generates data for the specified Minecraft version, then runs it.
+    Builds the project for the specified target, then runs it.
 Arguments:
     target - a single target to build for
-    version - optional argument - the Minecraft version to generate data for, which will also be the version Cuttlefish will host a server for
 Examples:
     calamari test cpp
-        Will build a native executable for Cuttlefish, then generate Minecraft 1.19.0 data, then run the Cuttlefish executable
-    calamari test java 1.18.2
-        Will build a jar file for Cuttlefish, generate Minecraft 1.18.2 data, then run the Cuttlefish jar with `java`');
+        Will build the project for cpp and then run it.');
                case 'buildall':
                   log('buildall Command Usage:
     calamari buildall
 Description:
-    Builds Cuttlefish for all targets automatically.');
+    Builds the project for all supported targets automatically.');
                case 'help':
                   log('Basic help command. See `calamari help` for actual help.');
                case null:
-                  log('Calamari is a utility for building and running Cuttlefish.
+                  log('Calamari is a utility for building and running Haxe projects.
 Use `calamari help <page>` to see more about a certain topic.
 You can also use `calamari help <command>` to see more about a certain command.
-If you just want to build a Cuttlefish executable, you can use `calamari build cpp`.
 List of help pages:
     commands - List of available commands
     targets - List of available targets and some details about each');
@@ -731,10 +779,6 @@ List of help pages:
       exit(OK);
    }
 
-   public static function parseArgs(all:Array<String>):{flags:Array<String>, args:Array<String>, options:Map<String, String>} {
-      return {flags: [], args: [], options: []};
-   }
-
    public static function parseCommand() {
       var all = Sys.args();
 
@@ -742,7 +786,7 @@ List of help pages:
 
       for (arg in all) {
          if (arg.startsWith('--')) {
-            pastArgs = true;
+            // pastArgs = true;
             var eqPos = arg.indexOf('=');
             var key;
             var value = '';
@@ -757,7 +801,7 @@ List of help pages:
             else
                options.set(key, value);
          } else if (arg.startsWith('-')) {
-            pastArgs = true;
+            // pastArgs = true;
             if (flags.contains(arg.substr(1))) {
                log('Duplicate flag: $arg');
                exit(DuplicateFlag);

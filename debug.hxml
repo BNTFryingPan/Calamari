@@ -1,0 +1,6 @@
+-p=src
+-debug
+-m Calamari
+--cpp ./build/
+--cmd cp ./build/Calamari-debug ./calamari
+--cmd ./calamari install
