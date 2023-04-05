@@ -1,4 +1,4 @@
-import Calamari.SysTarget;
+import Calamari.HaxeTarget;
 
 class Project {
    var file:ProjectFile;
@@ -7,5 +7,5 @@ class Project {
       this.file = file;
    }
 
-   public function build(target:SysTarget) {}
+   public function build(target:HaxeTarget) {}
 }

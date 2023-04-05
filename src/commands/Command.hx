@@ -1,21 +1,20 @@
 package commands;
 
 interface ICommand {
-   public function getCommandInfo():CommandInfo;
+   // public function getCommandInfo():CommandInfo;
    public function execute(args:Array<String>, flags:Array<String>, options:Map<String, String>):Int;
-   public var commandName(get, never):String;
 }
 
 abstract class Command implements ICommand {
    public function new() {}
 
-   abstract public function getCommandInfo():CommandInfo;
+   // abstract public function getCommandInfo():CommandInfo;
 
    abstract public function execute(args:Array<String>, flags:Array<String>, options:Map<String, String>):Int;
 
-   public var commandName(get, never):String;
-
-   abstract function get_commandName():String;
+   public function completions(input:Array<String>):Array<String> {
+      return [];
+   }
 }
 
 typedef CommandInfo = {
@@ -35,7 +34,12 @@ typedef CommandInfo = {
    var ?options:Array<{
       var name:String;
       var description:String;
-      var ?value:String;
+      var ?value:String; // used for --thing=path style descriptions
+      var ?values:Array<{ // used for listing available values
+         var value:String;
+         var ?aliases:Array<String>;
+         var ?description:String;
+      }>;
    }>;
    var ?examples:Array<{
       var usage:String;

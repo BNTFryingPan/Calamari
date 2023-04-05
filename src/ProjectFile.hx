@@ -32,7 +32,7 @@ typedef ProjectSettings = {
    /**
     * for internal use. dont try to create this in your json file!
     */
-   ?_targets:Map<SysTarget, TargetSupport>,
+   ?_targets:Map<HaxeTarget, TargetSupport>,
    /**
     * the folder to build to. actually creates folders for each target in the folder given here, `${buildFolder}/${target}/`
     */
@@ -192,7 +192,7 @@ class ProjectFile {
       trace(data);
    }
 
-   public function toString(flags:Array<String>, ?target:SysTarget):String {
+   public function toString(flags:Array<String>, ?target:HaxeTarget):String {
       var resolved = resolveProjectSettings(target, flags);
       var ret = 'ProjectFile{';
       ret += 'projectName: ${resolved.projectName}, ';
@@ -210,7 +210,7 @@ class ProjectFile {
       return ret;
    }
 
-   public function resolveProjectSettings(target:Null<SysTarget>, flags:Array<String>):ProjectFileStructure {
+   public function resolveProjectSettings(target:Null<HaxeTarget>, flags:Array<String>):ProjectFileStructure {
       var resolved:ProjectFileStructure = {
          projectName: this.data.projectName,
          versionFile: this.data.versionFile,
@@ -267,7 +267,7 @@ class ProjectFile {
 
       apply(this.data);
 
-      var handledTargets:Array<SysTarget> = [];
+      var handledTargets:Array<HaxeTarget> = [];
 
       function handleTarget(thing:TargetSupport) {
          var thingTarget = Calamari.resolveTargetAlias(thing.target);
@@ -327,24 +327,12 @@ class ProjectFile {
       return File.getContent(getRelativePath(resolved.versionFile));
    }
 
-   public function supportsTarget(target:SysTarget):Bool {
+   public function supportsTarget(target:HaxeTarget):Bool {
       if (!resolved._targets.exists(target))
          return false;
       return resolved._targets.get(target).supported;
    }
 
-   /*public function supportsTarget(target:SysTarget):Bool {
-      var matches = data.targets.filter((t) -> {
-         return Calamari.resolveTargetAlias(t.target);
-      })
-
-      if (matches.)
-         /*for (alias => t in Calamari.targetAliases) {
-            if (t == target && data.targets.contains(alias))
-               return true;
-   }*/
-   // return false;
-   // }
    public var buildFolder(get, never):String;
 
    function get_buildFolder():String {

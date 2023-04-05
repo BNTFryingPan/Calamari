@@ -1,5 +1,6 @@
 package;
 
+import commands.Install;
 import commands.Help;
 import commands.Command;
 import sys.io.FileOutput;
@@ -25,6 +26,7 @@ enum abstract ExitCode(Int) from Int to Int {
    var TargetNotSupportedByProject = 7;
    var NoMainClassSpecified = 8;
    var HelpTopicNotFound = 9;
+   var InstallFailed = 10;
 }
 
 enum abstract TargetLocations(String) {
@@ -33,20 +35,23 @@ enum abstract TargetLocations(String) {
    var HASHLINK = 'hashlink/';
    var JAVA = 'java/';
    var JVM = 'jvm/';
-   var NODEJS = 'nodejs/';
+   var JAVASCRIPT = 'javscript/';
    var NEKO = 'neko/';
    var PYTHON = 'python/';
 }
 
-enum SysTarget {
-   Cpp;
-   Csharp;
+enum HaxeTarget {
+   Javascript;
+   Neko;
    Hashlink;
+   // Php;
+   Python;
+   // Lua;
+   Cpp;
+   // Flash;
    Java;
    Jvm;
-   Nodejs;
-   Neko;
-   Python;
+   Csharp;
 }
 
 enum HostOS {
@@ -95,7 +100,7 @@ class Calamari {
       }
    }
 
-   public static var commands:Map<String, Class<ICommand>> = ['help' => Help,];
+   public static var commands:Map<String, Class<ICommand>> = ['help' => Help, 'install' => Install,];
 
    public static function error(text:String) {
       log('$LIGHT_RED    Error:$RESET$BOLD $text');
@@ -146,11 +151,9 @@ class Calamari {
       'hxjava' => Java,
       // JVM
       'jvm' => Jvm,
-      // NodeJS
-      'js' => Nodejs,
-      'node' => Nodejs,
-      'nodejs' => Nodejs,
-      'hxnodejs' => Nodejs,
+      // JS
+      'js' => Javascript,
+      'javascript' => Javascript,
       // Neko
       'neko' => Neko,
       'n' => Neko,
@@ -159,7 +162,7 @@ class Calamari {
       'py' => Python,
    ];
 
-   public static function resolveTargetAlias(str:String):Null<SysTarget> {
+   public static function resolveTargetAlias(str:String):Null<HaxeTarget> {
       if (!targetAliases.exists(str))
          return null;
       return targetAliases.get(str);
@@ -321,7 +324,7 @@ class Calamari {
       return _arch = ArmV6;
    }
 
-   public static function getExecutableName(target:SysTarget, windows:Bool = false, debug:Bool = false) {
+   public static function getExecutableName(target:HaxeTarget, windows:Bool = false, debug:Bool = false) {
       var proj = ProjectFile.getProjectData();
       var name = '${proj.projectName}';
 
@@ -342,7 +345,7 @@ class Calamari {
          case Csharp: '.cs';
          case Hashlink: '.hl';
          case Java: '.jar';
-         case Nodejs: '.js';
+         case Javascript: '.js';
          case Jvm: '.jvm.jar';
          case Neko: '.n';
          case Python: '.py';
@@ -398,7 +401,7 @@ class Calamari {
    public static function getCompletions(input:String):Array<String> {
       log(input);
       var proj = ProjectFile.getProjectData(false);
-      flags.remove('nocache');
+      flags.remove('nocache'); // for cuttlefish datagen, we want to use the cache anyways for completions
       var args = input.split(' ');
       args.shift();
       log('${args.length} $args');
@@ -448,7 +451,7 @@ class Calamari {
          if (args[0] == 'build') {
             var targetArgs = args.copy();
             targetArgs.shift();
-            var targetList:Array<SysTarget> = [];
+            var targetList:Array<HaxeTarget> = [];
 
             for (arg in targetArgs) {
                if (targetAliases.exists(arg)) {
@@ -474,7 +477,7 @@ class Calamari {
 
    public static var logFileOutput:FileOutput;
 
-   public static function build(targets:Array<SysTarget>) {
+   public static function build(targets:Array<HaxeTarget>) {
       var proj = ProjectFile.getProjectData();
       for (target in targets) {
          proj.resolveProjectSettings(target, flags);
@@ -522,10 +525,9 @@ class Calamari {
                log('Building Java Bytecode');
                copyFrom = '${proj.resolved.buildFolder}${JVM}${proj.resolved.projectName}.jar';
                args.push('--jvm=$copyFrom');
-            case Nodejs:
-               log('Building NodeJS');
-               args.push('--library=hxnodejs');
-               copyFrom = '${proj.resolved.buildFolder}${NODEJS}${proj.resolved.projectName}.js';
+            case Javascript:
+               log('Building Javascript');
+               copyFrom = '${proj.resolved.buildFolder}${JAVASCRIPT}${proj.resolved.projectName}.js';
                args.push('--js=$copyFrom');
             case Neko:
                log('Building Neko');
@@ -597,15 +599,10 @@ class Calamari {
 
       log('${CYAN}${BOLD}Calamari $DARK_CYAN${Macros.versionString()}$WHITE - $DARK_GREY${Macros.commitHash().substr(0, 6)}' #if debug + ' DEBUG' #end);
       if (commands.exists(command)) {
-         trace('running!');
          exit(Type.createInstance(commands.get(command), []).execute(args, flags, options));
       }
 
       switch (command) {
-         case 'projectfiletest':
-            var proj = ProjectFile.getProjectData(false);
-            var target:Null<SysTarget> = args.length > 1 ? resolveTargetAlias(args[1]) : null;
-            log(proj.toString(Calamari.flags, target));
          case 'clean':
             if (args.length == 1) {
                log('    No clean command provided. use `calamari help clean` for usage');
@@ -631,29 +628,11 @@ class Calamari {
                   exit(UnknownCommand);
             }
             log('Done!');
-         case 'install':
-            log('    Attempting to install Calamari command...');
-            switch (host) {
-               case Windows:
-                  log('    To install calamari, put the exe in a folder on your PATH.');
-               case Linux:
-                  var proc = new Process('sudo', ['cp', Sys.programPath(), '/usr/bin/calamari']);
-                  var exit = proc.exitCode();
-                  if (exit != 0) {
-                     var out = proc.stderr.readAll().toString();
-                     log('    Error copying file: $out');
-                     log('Failed to install Calamari');
-                  } else log('Succesfully installed Calamari command. Add `source $(calamari -setup)` to your `~/.bashrc` or `~/.zshrc` to get completions');
-               case Mac:
-                  log('    To install calamari, put the exectuable somewhere that your shell can find it.');
-               case Unknown:
-                  log('    Unknown platform! Can\'t provide install instructions.');
-            }
          case 'build':
             var project = ProjectFile.getProjectData(false);
             var targetArgs = args.copy();
             targetArgs.shift();
-            var targetList:Array<SysTarget> = [];
+            var targetList:Array<HaxeTarget> = [];
 
             for (arg in targetArgs) {
                if (targetAliases.exists(arg)) {
@@ -709,16 +688,6 @@ class Calamari {
     test <target> - Builds and then runs the project for the specified target.
     buildall - Builds the project for all supported targets automatically
     help - Basic help command for how to use Calamari');
-               case 'targets':
-                  log('List of targets and the available aliases to refer to them:
-    C++: cpp, c++, cplusplus, hxcpp
-    C#: cs, c#, csharp, hxcs
-    Hashlink: hl, hashlink
-    Java: java, hxjava
-    Java Bytecode: jvm
-    NodeJS: js, node, nodejs, hxnodejs
-    Neko: neko, n
-    Python: python, py');
                case 'build':
                   log('Build Command Usage:
     calamari build <targets>
