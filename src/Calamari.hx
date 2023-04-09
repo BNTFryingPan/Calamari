@@ -1,15 +1,17 @@
 package;
 
-import commands.Install;
-import commands.Help;
-import commands.Command;
-import sys.io.FileOutput;
+import commands.Clean;
 import haxe.Json;
+import haxe.Http;
+import haxe.PosInfos;
+import haxe.io.Path;
 import sys.FileSystem;
 import sys.io.File;
-import haxe.Http;
-import haxe.io.Path;
+import sys.io.FileOutput;
 import sys.io.Process;
+import commands.Command;
+import commands.Help;
+import commands.Install;
 import ProjectFile;
 import MinecraftManifests;
 
@@ -91,16 +93,16 @@ enum abstract ANSICodes(String) {
 }
 
 class Calamari {
-   public static function log(text:String) {
+   public static function log(text:String, ?pos:PosInfos) {
       if (!options.exists('autocomplete'))
          Sys.println('$WHITE$text$RESET');
       if (logFileOutput != null) {
-         logFileOutput.writeString('$text\n');
+         logFileOutput.writeString('[${pos.fileName}:${pos.lineNumber}] $text\n');
          logFileOutput.flush();
       }
    }
 
-   public static var commands:Map<String, Class<ICommand>> = ['help' => Help, 'install' => Install,];
+   public static var commands:Map<String, Class<ICommand>> = ['help' => Help, 'install' => Install, 'clean' => Clean,];
 
    public static function error(text:String) {
       log('$LIGHT_RED    Error:$RESET$BOLD $text');
@@ -368,7 +370,7 @@ class Calamari {
    }
 
    public static function getVersionCompletions(input:String):Array<String> {
-      log('generating version completions for $input');
+      log('generating version completions for "$input"');
       var split = ~/[-._ ]/g;
       var snapshotRegex = ~/([1-9][0-9])w([0-5][0-9])([a-z])/;
 
@@ -394,8 +396,8 @@ class Calamari {
             continue;
          validVersionPartsForThisPart.push(whatToPutInList);
       }
-
-      return validVersionPartsForThisPart.map(v -> '$input$v');
+      var ret = validVersionPartsForThisPart.map(v -> '$input$v');
+      return ret;
    }
 
    public static function getCompletions(input:String):Array<String> {
@@ -426,7 +428,7 @@ class Calamari {
          return [for (flag in knownFlags) '-$flag'];
       }
 
-      if (args.length == 1)
+      if (args.length <= 1)
          return [
             for (key => command in commands)
                if ((Reflect.field(command, 'getCommandInfo')() : CommandInfo).hideInCompletion != true) key
@@ -449,7 +451,7 @@ class Calamari {
             case 'run':
                return targetCompletionAliases;
             case 'datagen':
-               return getVersionCompletions(command.toLowerCase());
+               return getVersionCompletions(args[0]);
          }
          return [];
       }
@@ -567,6 +569,8 @@ class Calamari {
          var completions = getCompletions(options.get('autocomplete'));
          var output = completions.join('\n');
          log(completions.toString());
+         if (completions.length == 0)
+            exit(OK);
          for (choice in completions) {
             Sys.println(choice);
          }
@@ -614,31 +618,6 @@ class Calamari {
       }
 
       switch (command) {
-         case 'clean':
-            if (args.length == 1) {
-               log('    No clean command provided. use `calamari help clean` for usage');
-               exit(OK);
-            }
-            var proj = ProjectFile.getProjectData(false);
-            switch args[1] {
-               case 'all':
-                  log('    Cleaning all temp data for this project...');
-                  if (host == Windows)
-                     Sys.command('del', [proj.buildFolder.replace('/', '\\')]);
-                  else
-                     Sys.command('rm', ['-rf', '${proj.buildFolder}']);
-                  if (host == Windows) Sys.command('del', [proj.exportFolder.replace('/', '\\')]); else Sys.command('rm', ['-rf', '${proj.exportFolder}']);
-               case 'build' | 'compile':
-                  log('    Cleaning build folders');
-                  if (host == Windows) Sys.command('del', [proj.buildFolder.replace('/', '\\')]); else Sys.command('rm', ['-rf', '${proj.buildFolder}']);
-               case 'export' | 'output' | 'out':
-                  log('    Cleaning export folder');
-                  if (host == Windows) Sys.command('del', [proj.exportFolder.replace("/", "\\")]); else Sys.command('rm', ['-rf', '${proj.exportFolder}']);
-               default:
-                  error('Unknown clean command');
-                  exit(UnknownCommand);
-            }
-            log('Done!');
          case 'build':
             var project = ProjectFile.getProjectData(false);
             var targetArgs = args.copy();
@@ -776,7 +755,7 @@ List of help pages:
                key = arg.substr(2, arg.indexOf('=') - 2);
                value = arg.substr(arg.indexOf('=') + 1);
                if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-                  value = value.substring(1, value.length - 2);
+                  value = value.substring(1, value.length - 1);
                }
             }
             if (options.exists(key))

@@ -83,59 +83,60 @@ class Help extends Command {
    public static var helpTopics:Map<Null<String>, Void->String> = [
       null => () -> 'Calamari is a project management utility for Haxe. It helps manage libraries and Haxe compiler arguments.
 Use `calamari help <topic>` to see more about a certain topic.
-You can also use `calamari help <command>` to see more about a certain command.
 List of help topics:
    calamari - List of global flags and options
    commands - List of available commands
-   targets - List of available targets and their aliases',
+   targets - List of available targets and their aliases
+You can also use `calamari help <command>` to see more about a certain command.',
       'targets' => () -> 'List of targets and the available aliases to refer to them:
-      C++: c++, cpp, cplusplus, hxcpp
-      C#: c#, cs, csharp, hxcs
-      Hashlink: hashlink, hl
-      Java: java, hxjava
-      Java Bytecode: jvm
-      JavaScript: javascript, js
-      Neko: neko, n
-      Python: python, py'
+   C++: c++, cpp, cplusplus, hxcpp
+   C#: c#, cs, csharp, hxcs
+   Hashlink: hashlink, hl
+   Java: java, hxjava
+   Java Bytecode: jvm
+   JavaScript: javascript, js
+   Neko: neko, n
+   Python: python, py',
+      'commands' => () -> {
+         var out = 'List of commands:\n';
+         for (key => value in Calamari.commands) {
+            out += '   ${key}   ${(Reflect.field(value, 'getCommandInfo')() : CommandInfo).shortDescription}\n';
+         }
+         return out;
+      },
+      'calamari' => getHelpForCommandData.bind(ROOT_COMMAND_INFO, true)
    ];
 
    public function execute(args:Array<String>, flags:Array<String>, options:Map<String, String>):Int {
       var topic = args.shift();
       if (topic != null)
          topic = topic.toLowerCase();
+
       if (helpTopics.exists(topic)) {
          Calamari.log(helpTopics[topic]());
          return ExitCode.OK;
       }
-      switch topic {
-         case 'commands':
-            Calamari.log('List of commands:');
-            for (key => value in Calamari.commands) {
-               var data:CommandInfo = Reflect.field(value, 'getCommandInfo')();
-               Calamari.log('   ${key}   ${data.shortDescription}');
-            }
-            return ExitCode.OK;
-         case 'targets':
-            Calamari.log();
-         case 'calamari':
-            printHelpForCommandData(ROOT_COMMAND_INFO, true);
-         default:
-            if (!Calamari.commands.exists(topic)) {
-               Calamari.error('Command or topic not found!');
-               Calamari.log('Use `calamari help` to see available topics, or `calamari help commands` for a list of commands.');
-               return ExitCode.HelpTopicNotFound;
-            }
 
-            var data:CommandInfo = Reflect.field(Calamari.commands.get(topic), 'getCommandInfo')();
-            trace(data);
-            printHelpForCommandData(data);
+      if (!Calamari.commands.exists(topic)) {
+         Calamari.error('Command or topic not found!');
+         Calamari.log('Use `calamari help` to see available topics, or `calamari help commands` for a list of commands.');
+         return ExitCode.HelpTopicNotFound;
       }
+
+      var data:CommandInfo = Reflect.field(Calamari.commands.get(topic), 'getCommandInfo')();
+      Calamari.log(getHelpForCommandData(data));
 
       return ExitCode.OK;
    }
 
-   function getHelpForCommandData(data:CommandInfo, root:Bool = false) {
-      Calamari.log('${data.name} Command Usage:');
+   static function getHelpForCommandData(data:CommandInfo, root:Bool = false):String {
+      var helpString = '';
+
+      function log(text:String) {
+         helpString += '$text\n';
+      }
+
+      log('${data.name} Command Usage:');
       var usageString = '   calamari';
       if (!root) {
          usageString += ' ${data.name.toLowerCase()}';
@@ -145,39 +146,39 @@ List of help topics:
          usageString += ' ${data.args.map(a -> a.required == true ? '<${a.name}>' : '[${a.name}]').join(' ')}';
       }
 
-      Calamari.log(usageString);
+      log(usageString);
 
       if (data.description == null) {
          if (data.shortDescription != null) {
-            Calamari.log('\nDescription');
-            Calamari.log('   ${data.shortDescription}');
+            log('\nDescription');
+            log('   ${data.shortDescription}');
          }
       } else {
-         Calamari.log('\nDescription');
-         Calamari.log('   ${data.description}');
+         log('\nDescription');
+         log('   ${data.description}');
       }
 
       if (data.args != null && data.args.length > 0) {
-         Calamari.log('\nArguments:');
+         log('\nArguments:');
          for (arg in data.args) {
-            Calamari.log('   ${arg.name} - ${arg.description}');
+            log('   ${arg.name} - ${arg.description}');
          }
       }
 
       if (data.flags != null && data.flags.length > 0) {
-         Calamari.log('\nFlags:');
+         log('\nFlags:');
          for (flag in data.flags) {
-            Calamari.log('   -${flag.name} - ${flag.description}');
+            log('   -${flag.name} - ${flag.description}');
          }
       }
 
       if (data.options != null && data.options.length > 0) {
-         Calamari.log('\nOptions:');
+         log('\nOptions:');
          for (option in data.options) {
             if (option.value != null) {
-               Calamari.log('   --${option.name}=${option.value} - ${option.description}');
+               log('   --${option.name}=${option.value} - ${option.description}');
             } else {
-               Calamari.log('   --${option.name} - ${option.description}');
+               log('   --${option.name} - ${option.description}');
             }
 
             if (option.values != null && option.values.length > 0) {
@@ -186,26 +187,28 @@ List of help topics:
                   if (value.description != null) {
                      optString += ' - ${value.description}';
                   }
-                  Calamari.log(optString);
+                  log(optString);
                }
             }
          }
       }
 
       if (data.examples != null && data.examples.length > 0) {
-         Calamari.log('\nExamples:');
+         log('\nExamples:');
 
          for (example in data.examples) {
-            Calamari.log('   calamari ${data.name.toLowerCase()} ${example.usage}');
-            Calamari.log('      ${example.description}');
+            log('   calamari ${data.name.toLowerCase()} ${example.usage}');
+            log('      ${example.description}');
          }
       }
+
+      return helpString;
    }
 
    public override function completions(input:Array<String>):Array<String> {
       Calamari.log('${input}');
       Calamari.log('${input.length} "${input.join('", "')}"');
-      if (input.length == 0) {
+      if (input.length <= 1) {
          return [for (key => value in helpTopics) if (key != null) key].concat([for (key => value in Calamari.commands) key]);
       }
       return [];

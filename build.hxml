@@ -1,5 +1,6 @@
 -p=src
 -m Calamari
+-w -WStaticInitOrder
 --cpp ./build/
 --cmd cp ./build/Calamari ./calamari
 --cmd ./calamari install
