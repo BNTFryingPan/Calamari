@@ -160,7 +160,7 @@ class ProjectFile {
    static var default_project:ProjectFile = null;
 
    public static function findProjectFile(path:String):Null<String> {
-      trace('looking for project in $path');
+      // trace('looking for project in $path');
       if (!FileSystem.exists(path))
          return null;
       if (path == '/' || path.charCodeAt(1) == ':'.code)
@@ -181,7 +181,7 @@ class ProjectFile {
          return findProjectFile(Path.normalize(Path.join([path, '..'])));
       if (possibleProjects.length == 1)
          return possibleProjects[0];
-      trace('more than 1 possible project found. please specify a project!');
+      // trace('more than 1 possible project found. please specify a project!');
       return null;
    }
 
@@ -189,7 +189,7 @@ class ProjectFile {
       this.path = file;
       data = Json.parse(File.getContent(file));
 
-      trace(data);
+      // trace(data);
    }
 
    public function toString(flags:Array<String>, ?target:HaxeTarget):String {

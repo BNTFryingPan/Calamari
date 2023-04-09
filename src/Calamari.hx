@@ -427,12 +427,21 @@ class Calamari {
       }
 
       if (args.length == 1)
-         return rootCommandList;
-      if (args.length == 2) {
-         var arg1 = args[0];
-         switch arg1 {
-            case 'help':
-               return helpTopicList.concat(rootCommandList);
+         return [
+            for (key => command in commands)
+               if ((Reflect.field(command, 'getCommandInfo')() : CommandInfo).hideInCompletion != true) key
+         ];
+
+      var command = args.shift();
+      if (args.length > 0) {
+         if (commands.exists(command)) {
+            var cmd = Type.createInstance(commands.get(command), []);
+            log('getting completions for ${command}');
+            return cmd.completions(args);
+         }
+      }
+      if (args.length == 1) {
+         switch command {
             case 'buildall':
                return [];
             case 'test':
@@ -440,14 +449,15 @@ class Calamari {
             case 'run':
                return targetCompletionAliases;
             case 'datagen':
-               return getVersionCompletions(args[1].toLowerCase());
+               return getVersionCompletions(command.toLowerCase());
          }
+         return [];
       }
-      log('"${args[0]}" ${args[0] == "test"}');
-      if (args.length == 3 && args[0] == 'test') {
-         return getVersionCompletions(args[2].toLowerCase());
+      log('"${command}" ${command == "test"}');
+      if (args.length == 2 && command == 'test') {
+         return getVersionCompletions(args[1].toLowerCase());
       }
-      if (args.length >= 2) {
+      if (args.length >= 1) {
          if (args[0] == 'build') {
             var targetArgs = args.copy();
             targetArgs.shift();
@@ -553,6 +563,7 @@ class Calamari {
 
       if (options.exists('autocomplete')) {
          log(Sys.args().toString());
+         log(options.get('autocomplete'));
          var completions = getCompletions(options.get('autocomplete'));
          var output = completions.join('\n');
          log(completions.toString());
@@ -764,6 +775,9 @@ List of help pages:
             } else {
                key = arg.substr(2, arg.indexOf('=') - 2);
                value = arg.substr(arg.indexOf('=') + 1);
+               if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                  value = value.substring(1, value.length - 2);
+               }
             }
             if (options.exists(key))
                options.set(key, options.get(key) + ' $value');

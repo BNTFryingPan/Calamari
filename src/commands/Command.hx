@@ -3,6 +3,7 @@ package commands;
 interface ICommand {
    // public function getCommandInfo():CommandInfo;
    public function execute(args:Array<String>, flags:Array<String>, options:Map<String, String>):Int;
+   public function completions(input:Array<String>):Array<String>;
 }
 
 abstract class Command implements ICommand {
@@ -21,6 +22,7 @@ typedef CommandInfo = {
    var name:String;
    var ?description:String;
    var shortDescription:String;
+   var ?hideInCompletion:Bool;
    var ?args:Array<{
       var name:String;
       var ?required:Bool;
