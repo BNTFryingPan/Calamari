@@ -1,5 +1,7 @@
 # Calamari
-Utility for building and running [Cuttlefish](https://github.com/LeotomasMC/Cuttlefish), although it might be used for other projects as well in the future.
+Calamari is a (work in progress) project management utility for Haxe. It helps manage libraries and Haxe compiler arguments.
+
+Originally created for building [Cuttlefish](https://github.com/LeotomasMC/Cuttlefish), it will be able to be used for other projects as well.
 
 # Project File
 
